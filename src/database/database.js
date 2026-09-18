@@ -32,6 +32,7 @@ class DB {
   async addUser(user) {
     const connection = await this.getConnection();
     try {
+      await this.checkEmailAvailable(connection, user.email);
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
       const userResult = await this.query(connection, `INSERT INTO user (name, email, password) VALUES (?, ?, ?)`, [user.name, user.email, hashedPassword]);
@@ -64,38 +65,75 @@ class DB {
         throw new StatusCodeError('unknown user', 401);
       }
 
-      const roleResult = await this.query(connection, `SELECT * FROM userRole WHERE userId=?`, [user.id]);
-      const roles = roleResult.map((r) => {
-        return { objectId: r.objectId || undefined, role: r.role };
-      });
-
+      const roles = await this.getRoles(connection, user.id);
       return { ...user, roles: roles, password: undefined };
     } finally {
       connection.end();
     }
   }
 
+  async getUserById(userId) {
+    const connection = await this.getConnection();
+    try {
+      const userResult = await this.query(connection, `SELECT * FROM user WHERE id=?`, [userId]);
+      const user = userResult[0];
+      if (!user) {
+        throw new StatusCodeError('unknown user', 404);
+      }
+
+      const roles = await this.getRoles(connection, user.id);
+      return { ...user, roles: roles, password: undefined };
+    } finally {
+      connection.end();
+    }
+  }
+
+  async getRoles(connection, userId) {
+    const roleResult = await this.query(connection, `SELECT * FROM userRole WHERE userId=?`, [userId]);
+    return roleResult.map((r) => {
+      return { objectId: r.objectId || undefined, role: r.role };
+    });
+  }
+
   async updateUser(userId, name, email, password) {
     const connection = await this.getConnection();
     try {
-      const params = [];
+      if (email) {
+        await this.checkEmailAvailable(connection, email, userId);
+      }
+      await connection.beginTransaction();
       if (password) {
         const hashedPassword = await bcrypt.hash(password, 10);
-        params.push(`password='${hashedPassword}'`);
+        const query = 'UPDATE user SET password = ? WHERE id = ?';
+        await this.query(connection, query, [hashedPassword, userId]);
       }
       if (email) {
-        params.push(`email='${email}'`);
+        const query = 'UPDATE user SET email = ? WHERE id = ?';
+        await this.query(connection, query, [email, userId]);
       }
       if (name) {
-        params.push(`name='${name}'`);
+        const query = 'UPDATE user SET name = ? WHERE id = ?';
+        await this.query(connection, query, [name, userId]);
       }
-      if (params.length > 0) {
-        const query = `UPDATE user SET ${params.join(', ')} WHERE id=${userId}`;
-        await this.query(connection, query);
+      await connection.commit();
+      return this.getUserById(userId);
+    } catch (e) {
+      await connection.rollback();
+      if (e instanceof StatusCodeError) {
+        throw e;
+      } else {
+        throw new StatusCodeError('unable to update user', 500);
       }
-      return this.getUser(email, password);
     } finally {
       connection.end();
+    }
+  }
+
+  // userId lets a user "change" their email to the one they already have.
+  async checkEmailAvailable(connection, email, userId = 0) {
+    const userResult = await this.query(connection, `SELECT id FROM user WHERE email=? AND id<>?`, [email, userId]);
+    if (userResult.length > 0) {
+      throw new StatusCodeError('email already in use', 409);
     }
   }
 
