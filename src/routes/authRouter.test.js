@@ -21,6 +21,40 @@ test('login', async () => {
   expect(loginRes.body.user).toMatchObject(expectedUser);
 });
 
+test('login responds 401 when bad password', async () => {
+  const loginRes = await request(app)
+    .put('/api/auth')
+    .send({ ...testUser, password: 'badPassword' });
+  expect(loginRes.status).toBe(401);
+  expect(loginRes.body).toEqual({ message: 'unknown user' });
+});
+
+test('login responds 400 when empty password given', async () => {
+  const loginRes = await request(app)
+    .put('/api/auth')
+    .send({ ...testUser, password: '' });
+  expect(loginRes.status).toBe(400);
+  expect(loginRes.body).toEqual({ message: 'bad request' });
+});
+
+test('login responds 400 when password missing', async () => {
+  const loginRes = await request(app)
+    .put('/api/auth')
+    .send({ email: testUser.email });
+  expect(loginRes.status).toBe(400);
+  expect(loginRes.body).toEqual({ message: 'bad request' });
+});
+
+test('login responds 400 when email missing', async () => {
+  const loginRes = await request(app)
+    .put('/api/auth')
+    .send({ password: testUser.password });
+  expect(loginRes.status).toBe(400);
+  expect(loginRes.body).toEqual( { message: 'bad request' });
+});
+
 function expectValidJwt(potentialJwt) {
-  expect(potentialJwt).toMatch(/^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/);
+  expect(potentialJwt).toMatch(
+    /^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/,
+  );
 }

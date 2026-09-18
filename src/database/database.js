@@ -61,7 +61,7 @@ class DB {
       const userResult = await this.query(connection, `SELECT * FROM user WHERE email=?`, [email]);
       const user = userResult[0];
       if (!user || (password && !(await bcrypt.compare(password, user.password)))) {
-        throw new StatusCodeError('unknown user', 404);
+        throw new StatusCodeError('unknown user', 401);
       }
 
       const roleResult = await this.query(connection, `SELECT * FROM userRole WHERE userId=?`, [user.id]);
