@@ -148,13 +148,18 @@ class DB {
   async addDinerOrder(user, order) {
     const connection = await this.getConnection();
     try {
+      await connection.beginTransaction();
       const orderResult = await this.query(connection, `INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())`, [user.id, order.franchiseId, order.storeId]);
       const orderId = orderResult.insertId;
       for (const item of order.items) {
         const menuId = await this.getID(connection, 'id', item.menuId, 'menu');
         await this.query(connection, `INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)`, [orderId, menuId, item.description, item.price]);
       }
+      await connection.commit();
       return { ...order, id: orderId };
+    } catch (e) {
+      await connection.rollback();
+      throw e;
     } finally {
       connection.end();
     }
@@ -303,7 +308,7 @@ class DB {
     if (rows.length > 0) {
       return rows[0].id;
     }
-    throw new Error('No ID found');
+    throw new StatusCodeError('No ID found', 404);
   }
 
   async getConnection() {
