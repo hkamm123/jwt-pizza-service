@@ -5,10 +5,36 @@ const testUser = { name: 'pizza diner', email: 'reg@test.com', password: 'a' };
 let testUserAuthToken;
 
 beforeAll(async () => {
-  testUser.email = Math.random().toString(36).substring(2, 12) + '@test.com';
+  testUser.email = randomEmail();
   const registerRes = await request(app).post('/api/auth').send(testUser);
   testUserAuthToken = registerRes.body.token;
   expectValidJwt(testUserAuthToken);
+});
+
+test('register', async () => {
+  const newUser = { name: 'new diner', email: randomEmail(), password: 'b' };
+  const registerRes = await request(app).post('/api/auth').send(newUser);
+  expect(registerRes.status).toBe(200);
+  expectValidJwt(registerRes.body.token);
+
+  const expectedUser = { name: newUser.name, email: newUser.email, roles: [{ role: 'diner' }] };
+  expect(registerRes.body.user).toMatchObject(expectedUser);
+  expect(registerRes.body.user.id).toEqual(expect.any(Number));
+  expect(registerRes.body.user).not.toHaveProperty('password');
+
+  const meRes = await request(app)
+    .get('/api/user/me')
+    .set('Authorization', `Bearer ${registerRes.body.token}`);
+  expect(meRes.status).toBe(200);
+  expect(meRes.body).toMatchObject(expectedUser);
+});
+
+test('register responds 400 when password missing', async () => {
+  const registerRes = await request(app)
+    .post('/api/auth')
+    .send({ name: 'new diner', email: randomEmail() });
+  expectResponse(registerRes, 400, { message: 'name, email, and password are required' });
+  expect(registerRes.body).not.toHaveProperty('token');
 });
 
 test('login', async () => {
@@ -72,6 +98,10 @@ test('logout responds 401 when auth header missing', async () => {
   const logoutRes = await request(app).delete('/api/auth');
   expectResponse(logoutRes, 401, { message: 'unauthorized' });
 });
+
+function randomEmail() {
+  return Math.random().toString(36).substring(2, 12) + '@test.com';
+}
 
 function login(credentials) {
   return request(app).put('/api/auth').send(credentials);
