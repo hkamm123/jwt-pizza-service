@@ -1,6 +1,14 @@
 const request = require('supertest');
 const app = require('../service');
-const { Role, DB } = require('../database/database.js');
+const {
+  randomEmail,
+  createAdminUser,
+  registerDiner,
+  login,
+  loginUser,
+  expectResponse,
+  expectValidJwt,
+} = require('../testUtils.js');
 
 let adminUser;
 let adminAuthToken;
@@ -119,7 +127,7 @@ test('update user responds 403 when updating someone else', async () => {
   });
   expectResponse(updateRes, 403, { message: 'unauthorized' });
 
-  const loginRes = await login({ email: victim.user.email, password: 'a' });
+  const loginRes = await login({ email: victim.user.email, password: victim.password });
   expect(loginRes.status).toBe(200);
   expect(loginRes.body.user.name).toBe(victim.user.name);
 });
@@ -149,34 +157,6 @@ test('update user responds 401 when auth header missing', async () => {
   expectResponse(updateRes, 401, { message: 'unauthorized' });
 });
 
-async function createAdminUser() {
-  const user = {
-    name: 'pizza admin',
-    email: randomEmail(),
-    password: 'toomanysecrets',
-    roles: [{ role: Role.Admin }],
-  };
-  await DB.addUser(user);
-  return user;
-}
-
-async function registerDiner() {
-  const diner = { name: 'pizza diner', email: randomEmail(), password: 'a' };
-  const registerRes = await request(app).post('/api/auth').send(diner);
-  expect(registerRes.status).toBe(200);
-  return registerRes.body;
-}
-
-function login(credentials) {
-  return request(app).put('/api/auth').send(credentials);
-}
-
-async function loginUser(user) {
-  const loginRes = await login({ email: user.email, password: user.password });
-  expect(loginRes.status).toBe(200);
-  return loginRes.body.token;
-}
-
 function getMe(token) {
   return request(app)
     .get('/api/user/me')
@@ -188,19 +168,4 @@ function updateUser(token, userId, changes) {
     .put(`/api/user/${userId}`)
     .set('Authorization', `Bearer ${token}`)
     .send(changes);
-}
-
-function randomEmail() {
-  return Math.random().toString(36).substring(2, 12) + '@test.com';
-}
-
-function expectResponse(actualRes, expectedStatus, expectedBody) {
-  expect(actualRes.status).toBe(expectedStatus);
-  expect(actualRes.body).toEqual(expectedBody);
-}
-
-function expectValidJwt(potentialJwt) {
-  expect(potentialJwt).toMatch(
-    /^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/,
-  );
 }

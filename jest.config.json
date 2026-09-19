@@ -8,5 +8,6 @@
     "global": {
       "lines": 80
     }
-  }
+  },
+  "coveragePathIgnorePatterns": ["src/testUtils.js"]
 }

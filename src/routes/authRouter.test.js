@@ -1,5 +1,6 @@
 const request = require('supertest');
 const app = require('../service');
+const { randomEmail, login, expectResponse, expectValidJwt } = require('../testUtils.js');
 
 const testUser = { name: 'pizza diner', email: 'reg@test.com', password: 'a' };
 let testUserAuthToken;
@@ -99,14 +100,6 @@ test('logout responds 401 when auth header missing', async () => {
   expectResponse(logoutRes, 401, { message: 'unauthorized' });
 });
 
-function randomEmail() {
-  return Math.random().toString(36).substring(2, 12) + '@test.com';
-}
-
-function login(credentials) {
-  return request(app).put('/api/auth').send(credentials);
-}
-
 async function loginTestUser() {
   const loginRes = await login(testUser);
   expect(loginRes.status).toBe(200);
@@ -118,15 +111,4 @@ function logout(token) {
   return request(app)
     .delete('/api/auth')
     .set('Authorization', `Bearer ${token}`);
-}
-
-function expectResponse(actualRes, expectedStatus, expectedBody) {
-  expect(actualRes.status).toBe(expectedStatus);
-  expect(actualRes.body).toEqual(expectedBody);
-}
-
-function expectValidJwt(potentialJwt) {
-  expect(potentialJwt).toMatch(
-    /^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/,
-  );
 }

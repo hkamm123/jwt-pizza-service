@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../service');
-const { Role, DB } = require('../database/database.js');
+const { DB } = require('../database/database.js');
+const { randomName, createAdminUser, registerDiner, login, loginUser, expectResponse } = require('../testUtils.js');
 
 let adminUser;
 let adminAuthToken;
@@ -112,7 +113,7 @@ test('list user franchises responds 401 when auth header missing', async () => {
 });
 
 test('create franchise', async () => {
-  const { user } = await registerDiner();
+  const { user, password } = await registerDiner();
   const franchise = { name: 'franchise ' + randomName(), admins: [{ email: user.email }] };
 
   const createRes = await createFranchise(adminAuthToken, franchise);
@@ -122,7 +123,7 @@ test('create franchise', async () => {
     admins: [{ id: user.id, name: user.name, email: user.email }],
   });
 
-  const loginRes = await login({ email: user.email, password: 'a' });
+  const loginRes = await login({ email: user.email, password });
   expect(loginRes.body.user.roles).toContainEqual({ role: 'franchisee', objectId: createRes.body.id });
 });
 
@@ -290,34 +291,6 @@ async function createFranchiseWithStore() {
   return { franchisee, franchiseeToken, franchise, store };
 }
 
-async function createAdminUser() {
-  const user = {
-    name: 'pizza admin',
-    email: randomName() + '@admin.com',
-    password: 'toomanysecrets',
-    roles: [{ role: Role.Admin }],
-  };
-  await DB.addUser(user);
-  return user;
-}
-
-async function registerDiner() {
-  const diner = { name: 'pizza diner', email: randomName() + '@test.com', password: 'a' };
-  const registerRes = await request(app).post('/api/auth').send(diner);
-  expect(registerRes.status).toBe(200);
-  return registerRes.body;
-}
-
-function login(credentials) {
-  return request(app).put('/api/auth').send(credentials);
-}
-
-async function loginUser(user) {
-  const loginRes = await login({ email: user.email, password: user.password });
-  expect(loginRes.status).toBe(200);
-  return loginRes.body.token;
-}
-
 function listFranchises(query, token) {
   const req = request(app).get('/api/franchise').query(query);
   return token ? req.set('Authorization', `Bearer ${token}`) : req;
@@ -363,13 +336,4 @@ async function expectFranchiseNamed(name) {
 async function expectNoFranchiseNamed(name) {
   const listRes = await listFranchises({ name });
   expect(listRes.body.franchises).toEqual([]);
-}
-
-function randomName() {
-  return Math.random().toString(36).substring(2, 12);
-}
-
-function expectResponse(actualRes, expectedStatus, expectedBody) {
-  expect(actualRes.status).toBe(expectedStatus);
-  expect(actualRes.body).toEqual(expectedBody);
 }

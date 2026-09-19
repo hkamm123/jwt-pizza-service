@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../service');
-const { Role, DB } = require('../database/database.js');
+const { DB } = require('../database/database.js');
+const { randomName, createAdminUser, registerDiner, loginUser, expectResponse } = require('../testUtils.js');
 
 let adminAuthToken;
 let menuItem;
@@ -125,25 +126,6 @@ test('create order responds 404 and saves nothing when menu item does not exist'
   expect(ordersRes.body.orders).toEqual([]);
 });
 
-async function createAdminUser() {
-  const user = { name: 'pizza admin', email: randomName() + '@admin.com', password: 'toomanysecrets', roles: [{ role: Role.Admin }] };
-  await DB.addUser(user);
-  return user;
-}
-
-async function registerDiner() {
-  const diner = { name: 'pizza diner', email: randomName() + '@test.com', password: 'a' };
-  const registerRes = await request(app).post('/api/auth').send(diner);
-  expect(registerRes.status).toBe(200);
-  return registerRes.body;
-}
-
-async function loginUser(user) {
-  const loginRes = await request(app).put('/api/auth').send({ email: user.email, password: user.password });
-  expect(loginRes.status).toBe(200);
-  return loginRes.body.token;
-}
-
 function addMenuItem(token, item) {
   return request(app)
     .put('/api/order/menu')
@@ -167,13 +149,4 @@ function createOrder(token, orderReq) {
 // Stand in for the pizza factory so tests never place real orders with the real API key.
 function mockFactory(ok, body) {
   return jest.spyOn(global, 'fetch').mockResolvedValue({ ok, json: async () => body });
-}
-
-function randomName() {
-  return Math.random().toString(36).substring(2, 12);
-}
-
-function expectResponse(actualRes, expectedStatus, expectedBody) {
-  expect(actualRes.status).toBe(expectedStatus);
-  expect(actualRes.body).toEqual(expectedBody);
 }
