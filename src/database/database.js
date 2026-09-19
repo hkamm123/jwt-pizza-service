@@ -206,6 +206,11 @@ class DB {
   async createFranchise(franchise) {
     const connection = await this.getConnection();
     try {
+      const existing = await this.query(connection, `SELECT id FROM franchise WHERE name=?`, [franchise.name]);
+      if (existing.length > 0) {
+        throw new StatusCodeError('franchise name already in use', 409);
+      }
+
       for (const admin of franchise.admins) {
         const adminUser = await this.query(connection, `SELECT id, name FROM user WHERE email=?`, [admin.email]);
         if (adminUser.length == 0) {
@@ -231,6 +236,9 @@ class DB {
   async deleteFranchise(franchiseId) {
     const connection = await this.getConnection();
     try {
+      // Checked before the transaction so the 404 isn't turned into a 500 by the catch below.
+      await this.checkFranchiseExists(connection, franchiseId);
+
       await connection.beginTransaction();
       try {
         await this.query(connection, `DELETE FROM store WHERE franchiseId=?`, [franchiseId]);
@@ -243,6 +251,13 @@ class DB {
       }
     } finally {
       connection.end();
+    }
+  }
+
+  async checkFranchiseExists(connection, franchiseId) {
+    const franchiseResult = await this.query(connection, `SELECT id FROM franchise WHERE id=?`, [franchiseId]);
+    if (franchiseResult.length === 0) {
+      throw new StatusCodeError('unknown franchise', 404);
     }
   }
 
@@ -308,6 +323,7 @@ class DB {
   async createStore(franchiseId, store) {
     const connection = await this.getConnection();
     try {
+      await this.checkFranchiseExists(connection, franchiseId);
       const insertResult = await this.query(connection, `INSERT INTO store (franchiseId, name) VALUES (?, ?)`, [franchiseId, store.name]);
       return { id: insertResult.insertId, franchiseId, name: store.name };
     } finally {
@@ -318,7 +334,10 @@ class DB {
   async deleteStore(franchiseId, storeId) {
     const connection = await this.getConnection();
     try {
-      await this.query(connection, `DELETE FROM store WHERE franchiseId=? AND id=?`, [franchiseId, storeId]);
+      const deleteResult = await this.query(connection, `DELETE FROM store WHERE franchiseId=? AND id=?`, [franchiseId, storeId]);
+      if (deleteResult.affectedRows === 0) {
+        throw new StatusCodeError('unknown store', 404);
+      }
     } finally {
       connection.end();
     }

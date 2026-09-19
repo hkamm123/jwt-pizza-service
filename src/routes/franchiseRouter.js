@@ -59,7 +59,9 @@ franchiseRouter.docs = [
 franchiseRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const [franchises, more] = await DB.getFranchises(req.user, req.query.page, req.query.limit, req.query.name);
+    const limit = parseQueryInt(req.query.limit);
+    const page = parseQueryInt(req.query.page);
+    const [franchises, more] = await DB.getFranchises(req.user, page, limit, req.query.name);
     res.json({ franchises, more });
   })
 );
@@ -69,13 +71,12 @@ franchiseRouter.get(
   '/:userId',
   authRouter.authenticateToken,
   asyncHandler(async (req, res) => {
-    let result = [];
     const userId = Number(req.params.userId);
     if (req.user.id === userId || req.user.isRole(Role.Admin)) {
-      result = await DB.getUserFranchises(userId);
+      res.json(await DB.getUserFranchises(userId));
+    } else {
+      res.status(403).json({ message: 'unauthorized' });
     }
-
-    res.json(result);
   })
 );
 
@@ -88,7 +89,15 @@ franchiseRouter.post(
       throw new StatusCodeError('unable to create a franchise', 403);
     }
 
-    const franchise = req.body;
+    const { name, admins } = req.body;
+    const validName = typeof name === 'string' && name.trim() !== '';
+    const validAdmins = Array.isArray(admins) && admins.every((admin) => typeof admin?.email === 'string');
+    if (!validName || !validAdmins) {
+      throw new StatusCodeError('bad request', 400);
+    }
+
+    // Build the franchise from only the fields we expect so extra body fields aren't echoed back.
+    const franchise = { name, admins: admins.map((admin) => ({ email: admin.email })) };
     res.send(await DB.createFranchise(franchise));
   })
 );
@@ -96,7 +105,12 @@ franchiseRouter.post(
 // deleteFranchise
 franchiseRouter.delete(
   '/:franchiseId',
+  authRouter.authenticateToken,
   asyncHandler(async (req, res) => {
+    if (!req.user.isRole(Role.Admin)) {
+      throw new StatusCodeError('unable to delete a franchise', 403);
+    }
+
     const franchiseId = Number(req.params.franchiseId);
     await DB.deleteFranchise(franchiseId);
     res.json({ message: 'franchise deleted' });
@@ -114,7 +128,12 @@ franchiseRouter.post(
       throw new StatusCodeError('unable to create a store', 403);
     }
 
-    res.send(await DB.createStore(franchise.id, req.body));
+    const { name } = req.body;
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new StatusCodeError('name is required', 400);
+    }
+
+    res.send(await DB.createStore(franchise.id, { name }));
   })
 );
 
@@ -134,5 +153,17 @@ franchiseRouter.delete(
     res.json({ message: 'store deleted' });
   })
 );
+
+function parseQueryInt(value) {
+  if (value === undefined) {
+    return value;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new StatusCodeError('bad request', 400);
+  }
+
+  return Number(value);
+}
 
 module.exports = franchiseRouter;
