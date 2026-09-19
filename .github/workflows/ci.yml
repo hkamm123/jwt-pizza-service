@@ -22,6 +22,14 @@ jobs:
     outputs:
       version: ${{ steps.set_version.outputs.version }}
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
       - name: Write config file
         run: |
           echo "module.exports = {
@@ -41,13 +49,6 @@ jobs:
               apiKey: '${{ secrets.FACTORY_API_KEY }}',
             },
           };" > src/config.js
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
 
       - name: Install dependencies
         run: npm ci
