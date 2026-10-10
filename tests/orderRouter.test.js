@@ -1,7 +1,7 @@
 const request = require('supertest');
-const app = require('../service');
-const { DB } = require('../database/database.js');
-const { randomName, createAdminUser, registerDiner, loginUser, expectResponse } = require('../testUtils.js');
+const app = require('../src/service');
+const { DB } = require('../src/database/database.js');
+const { randomName, createAdminUser, registerDiner, loginUser, expectResponse } = require('../src/testUtils.js');
 
 let adminAuthToken;
 let menuItem;

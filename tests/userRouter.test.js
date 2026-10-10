@@ -1,5 +1,5 @@
 const request = require('supertest');
-const app = require('../service');
+const app = require('../src/service');
 const {
   randomEmail,
   createAdminUser,
@@ -8,7 +8,7 @@ const {
   loginUser,
   expectResponse,
   expectValidJwt,
-} = require('../testUtils.js');
+} = require('../src/testUtils.js');
 
 let adminUser;
 let adminAuthToken;
