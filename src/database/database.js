@@ -129,6 +129,33 @@ class DB {
     }
   }
 
+  async deleteUser(userId) {
+    const connection = await this.getConnection();
+    try {
+      await this.checkUserExists(connection, userId);
+
+      await connection.beginTransaction();
+      try {
+        await this.query(connection, `DELETE FROM auth WHERE userId=?`, [userId]);
+        await this.query(connection, `DELETE FROM userRole WHERE userId=?`, [userId]);
+        await this.query(connection, `DELETE FROM user WHERE id=?`, [userId]);
+        await connection.commit();
+      } catch {
+        await connection.rollback();
+        throw new StatusCodeError('unable to delete user', 500);
+      }
+    } finally {
+      connection.end();
+    }
+  }
+
+  async checkUserExists(connection, userId) {
+    const userResult = await this.query(connection, `SELECT id FROM user WHERE id=?`, [userId]);
+    if (userResult.length === 0) {
+      throw new StatusCodeError('unknown user', 404);
+    }
+  }
+
   // userId lets a user "change" their email to the one they already have.
   async checkEmailAvailable(connection, email, userId = 0) {
     const userResult = await this.query(connection, `SELECT id FROM user WHERE email=? AND id<>?`, [email, userId]);
