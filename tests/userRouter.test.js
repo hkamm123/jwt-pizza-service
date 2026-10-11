@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../src/service');
 const {
+  randomName,
   randomEmail,
   createAdminUser,
   registerDiner,
@@ -40,31 +41,92 @@ test('get me responds 401 when bad token', async () => {
 test('list users unauthorized', async () => {
   const listUsersRes = await request(app).get('/api/user');
   expect(listUsersRes.status).toBe(401);
+  expect(listUsersRes.body).not.toHaveProperty('users');
 });
 
 test('list users', async () => {
-  const [user, userToken] = await registerUser(request(app));
-  const listUsersRes = await request(app)
-    .get('/api/user')
-    .set('Authorization', 'Bearer ' + userToken);
+  const listUsersRes = await listUsers(adminAuthToken);
   expect(listUsersRes.status).toBe(200);
+  expect(listUsersRes.body.users).toEqual(expect.any(Array));
+  expect(listUsersRes.body.users.length).toBeGreaterThan(0);
 });
 
-async function registerUser(service) {
-  const testUser = {
-    name: 'pizza diner',
-    email: `${randomName()}@test.com`,
-    password: 'a',
-  };
-  const registerRes = await service.post('/api/auth').send(testUser);
-  registerRes.body.user.password = testUser.password;
+test('list users pages through results', async () => {
+  // Two users guarantee at least two pages when the limit is 1.
+  await registerDiner();
+  await registerDiner();
 
-  return [registerRes.body.user, registerRes.body.token];
-}
+  const firstPage = await listUsers(adminAuthToken, { page: 0, limit: 1 });
+  expect(firstPage.status).toBe(200);
+  expect(firstPage.body.users).toHaveLength(1);
+  expect(firstPage.body.more).toBe(true);
 
-function randomName() {
-  return Math.random().toString(36).substring(2, 12);
-}
+  const secondPage = await listUsers(adminAuthToken, { page: 1, limit: 1 });
+  expect(secondPage.status).toBe(200);
+  expect(secondPage.body.users).toHaveLength(1);
+  expect(secondPage.body.users[0].id).not.toBe(firstPage.body.users[0].id);
+});
+
+test('list users filters by exact name', async () => {
+  const name = 'diner ' + randomName();
+  const { user } = await registerDiner(name);
+
+  const listUsersRes = await listUsers(adminAuthToken, { name });
+  expectResponse(listUsersRes, 200, {
+    users: [{ id: user.id, name, email: user.email, roles: [{ role: 'diner' }] }],
+    more: false,
+  });
+});
+
+test('list users filters by name with a wildcard', async () => {
+  const prefix = randomName();
+  const { user: first } = await registerDiner(`${prefix} one`);
+  const { user: second } = await registerDiner(`${prefix} two`);
+  await registerDiner(`not ${prefix}`);
+
+  const listUsersRes = await listUsers(adminAuthToken, { name: `${prefix}*` });
+  expect(listUsersRes.status).toBe(200);
+  const ids = listUsersRes.body.users.map((u) => u.id);
+  expect(ids.sort()).toEqual([first.id, second.id].sort());
+});
+
+test('list users pages through filtered results', async () => {
+  const prefix = randomName();
+  await registerDiner(`${prefix} one`);
+  await registerDiner(`${prefix} two`);
+
+  const firstPage = await listUsers(adminAuthToken, { name: `${prefix}*`, page: 0, limit: 1 });
+  expect(firstPage.body.users).toHaveLength(1);
+  expect(firstPage.body.more).toBe(true);
+
+  const lastPage = await listUsers(adminAuthToken, { name: `${prefix}*`, page: 1, limit: 1 });
+  expect(lastPage.body.users).toHaveLength(1);
+  expect(lastPage.body.more).toBe(false);
+});
+
+test('list users returns an empty list when no names match', async () => {
+  const listUsersRes = await listUsers(adminAuthToken, { name: 'nobody ' + randomName() });
+  expectResponse(listUsersRes, 200, { users: [], more: false });
+});
+
+test.each([
+  { page: 'abc' },
+  { page: -1 },
+  { page: 1.5 },
+  { limit: 'abc' },
+  { limit: -1 },
+  { limit: 1.5 },
+])('list users responds 400 when query is %o', async (query) => {
+  const listUsersRes = await listUsers(adminAuthToken, query);
+  expectResponse(listUsersRes, 400, { message: 'bad request' });
+});
+
+test('list users responds 403 when not an admin', async () => {
+  const { token } = await registerDiner();
+  const listUsersRes = await listUsers(token);
+  expect(listUsersRes.status).toBe(403);
+  expect(listUsersRes.body).not.toHaveProperty('users');
+});
 
 test('update user', async () => {
   const { user, token } = await registerDiner();
@@ -192,6 +254,13 @@ test('update user responds 401 when auth header missing', async () => {
 function getMe(token) {
   return request(app)
     .get('/api/user/me')
+    .set('Authorization', `Bearer ${token}`);
+}
+
+function listUsers(token, query = {}) {
+  return request(app)
+    .get('/api/user')
+    .query(query)
     .set('Authorization', `Bearer ${token}`);
 }
 

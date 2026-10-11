@@ -1,7 +1,7 @@
 const express = require('express');
 const { DB, Role } = require('../database/database.js');
 const { authRouter } = require('./authRouter.js');
-const { StatusCodeError, asyncHandler } = require('../endpointHelper.js');
+const { StatusCodeError, asyncHandler, parseQueryInt } = require('../endpointHelper.js');
 
 const franchiseRouter = express.Router();
 
@@ -153,17 +153,5 @@ franchiseRouter.delete(
     res.json({ message: 'store deleted' });
   })
 );
-
-function parseQueryInt(value) {
-  if (value === undefined) {
-    return value;
-  }
-
-  if (!/^\d+$/.test(value)) {
-    throw new StatusCodeError('bad request', 400);
-  }
-
-  return Number(value);
-}
 
 module.exports = franchiseRouter;

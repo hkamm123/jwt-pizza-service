@@ -1,5 +1,5 @@
 const express = require('express');
-const { asyncHandler } = require('../endpointHelper.js');
+const { asyncHandler, parseQueryInt } = require('../endpointHelper.js');
 const { DB, Role } = require('../database/database.js');
 const { authRouter, setAuth } = require('./authRouter.js');
 
@@ -21,10 +21,10 @@ userRouter.docs = [
   },
   {
     method: 'GET',
-    path: '/api/user?page=1&limit=10&name=*',
+    path: '/api/user?page=0&limit=10&name=*',
     requiresAuth: true,
-    description: 'Gets a list of users',
-    example: `curl -X GET localhost:3000/api/user -H 'Authorization: Bearer tttttt'`,
+    description: 'Gets a list of users. Admin only',
+    example: `curl -X GET 'localhost:3000/api/user?page=0&limit=10&name=pizza*' -H 'Authorization: Bearer tttttt'`,
     response: {
       users: [
         {
@@ -34,6 +34,7 @@ userRouter.docs = [
           roles: [{ role: 'admin' }],
         },
       ],
+      more: true,
     },
   },
   {
@@ -76,7 +77,13 @@ userRouter.get(
   '/',
   authRouter.authenticateToken,
   asyncHandler(async (req, res) => {
-    res.json({});
+    if (!req.user.isRole(Role.Admin)) {
+      return res.status(403).json({ message: 'unauthorized' });
+    }
+    const page = parseQueryInt(req.query.page);
+    const limit = parseQueryInt(req.query.limit);
+    const [users, more] = await DB.getUsers(page, limit, req.query.name);
+    res.json({ users, more });
   }),
 );
 
@@ -109,15 +116,6 @@ userRouter.delete(
 
     await DB.deleteUser(Number(req.params.userId));
     res.json({ message: 'User deleted successfully' });
-  }),
-);
-
-// listUsers
-userRouter.get(
-  '/',
-  authRouter.authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: 'not implemented', users: [], more: false });
   }),
 );
 

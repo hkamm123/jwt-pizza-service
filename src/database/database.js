@@ -22,7 +22,11 @@ class DB {
   async addMenuItem(item) {
     const connection = await this.getConnection();
     try {
-      const addResult = await this.query(connection, `INSERT INTO menu (title, description, image, price) VALUES (?, ?, ?, ?)`, [item.title, item.description, item.image, item.price]);
+      const addResult = await this.query(
+        connection,
+        `INSERT INTO menu (title, description, image, price) VALUES (?, ?, ?, ?)`,
+        [item.title, item.description, item.image, item.price],
+      );
       return { ...item, id: addResult.insertId };
     } finally {
       connection.end();
@@ -35,17 +39,34 @@ class DB {
       await this.checkEmailAvailable(connection, user.email);
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
-      const userResult = await this.query(connection, `INSERT INTO user (name, email, password) VALUES (?, ?, ?)`, [user.name, user.email, hashedPassword]);
+      const userResult = await this.query(
+        connection,
+        `INSERT INTO user (name, email, password) VALUES (?, ?, ?)`,
+        [user.name, user.email, hashedPassword],
+      );
       const userId = userResult.insertId;
       for (const role of user.roles) {
         switch (role.role) {
           case Role.Franchisee: {
-            const franchiseId = await this.getID(connection, 'name', role.object, 'franchise');
-            await this.query(connection, `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`, [userId, role.role, franchiseId]);
+            const franchiseId = await this.getID(
+              connection,
+              'name',
+              role.object,
+              'franchise',
+            );
+            await this.query(
+              connection,
+              `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`,
+              [userId, role.role, franchiseId],
+            );
             break;
           }
           default: {
-            await this.query(connection, `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`, [userId, role.role, 0]);
+            await this.query(
+              connection,
+              `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`,
+              [userId, role.role, 0],
+            );
             break;
           }
         }
@@ -59,9 +80,16 @@ class DB {
   async getUser(email, password) {
     const connection = await this.getConnection();
     try {
-      const userResult = await this.query(connection, `SELECT * FROM user WHERE email=?`, [email]);
+      const userResult = await this.query(
+        connection,
+        `SELECT * FROM user WHERE email=?`,
+        [email],
+      );
       const user = userResult[0];
-      if (!user || (password && !(await bcrypt.compare(password, user.password)))) {
+      if (
+        !user ||
+        (password && !(await bcrypt.compare(password, user.password)))
+      ) {
         throw new StatusCodeError('unknown user', 401);
       }
 
@@ -75,7 +103,11 @@ class DB {
   async getUserById(userId) {
     const connection = await this.getConnection();
     try {
-      const userResult = await this.query(connection, `SELECT * FROM user WHERE id=?`, [userId]);
+      const userResult = await this.query(
+        connection,
+        `SELECT * FROM user WHERE id=?`,
+        [userId],
+      );
       const user = userResult[0];
       if (!user) {
         throw new StatusCodeError('unknown user', 404);
@@ -88,8 +120,58 @@ class DB {
     }
   }
 
+  async getUsers(page = 0, limit = 10, nameFilter = '*') {
+    const connection = await this.getConnection();
+    try {
+      const offset = page * limit;
+      nameFilter = nameFilter.replace(/\*/g, '%');
+      let users = await this.query(
+        connection,
+        `SELECT id, name, email FROM user WHERE name LIKE ? ORDER BY id LIMIT ${limit + 1} OFFSET ${offset}`,
+        [nameFilter],
+      );
+
+      const more = users.length > limit;
+      if (more) {
+        users = users.slice(0, limit);
+      }
+      if (users.length === 0) {
+        return [users, more];
+      }
+
+      // execute() won't expand an array into IN (?), so build one placeholder per id.
+      const userIds = users.map((user) => user.id);
+      const placeholders = userIds.map(() => '?').join(',');
+      const roleResult = await this.query(
+        connection,
+        `SELECT * FROM userRole WHERE userId IN (${placeholders})`,
+        userIds,
+      );
+
+      const rolesByUser = {};
+      for (const r of roleResult) {
+        rolesByUser[r.userId] ??= [];
+        rolesByUser[r.userId].push({
+          objectId: r.objectId || undefined,
+          role: r.role,
+        });
+      }
+      users = users.map((user) => ({
+        ...user,
+        roles: rolesByUser[user.id] ?? [],
+      }));
+      return [users, more];
+    } finally {
+      connection.end();
+    }
+  }
+
   async getRoles(connection, userId) {
-    const roleResult = await this.query(connection, `SELECT * FROM userRole WHERE userId=?`, [userId]);
+    const roleResult = await this.query(
+      connection,
+      `SELECT * FROM userRole WHERE userId=?`,
+      [userId],
+    );
     return roleResult.map((r) => {
       return { objectId: r.objectId || undefined, role: r.role };
     });
@@ -136,8 +218,12 @@ class DB {
 
       await connection.beginTransaction();
       try {
-        await this.query(connection, `DELETE FROM auth WHERE userId=?`, [userId]);
-        await this.query(connection, `DELETE FROM userRole WHERE userId=?`, [userId]);
+        await this.query(connection, `DELETE FROM auth WHERE userId=?`, [
+          userId,
+        ]);
+        await this.query(connection, `DELETE FROM userRole WHERE userId=?`, [
+          userId,
+        ]);
         await this.query(connection, `DELETE FROM user WHERE id=?`, [userId]);
         await connection.commit();
       } catch {
@@ -150,7 +236,11 @@ class DB {
   }
 
   async checkUserExists(connection, userId) {
-    const userResult = await this.query(connection, `SELECT id FROM user WHERE id=?`, [userId]);
+    const userResult = await this.query(
+      connection,
+      `SELECT id FROM user WHERE id=?`,
+      [userId],
+    );
     if (userResult.length === 0) {
       throw new StatusCodeError('unknown user', 404);
     }
@@ -158,7 +248,11 @@ class DB {
 
   // userId lets a user "change" their email to the one they already have.
   async checkEmailAvailable(connection, email, userId = 0) {
-    const userResult = await this.query(connection, `SELECT id FROM user WHERE email=? AND id<>?`, [email, userId]);
+    const userResult = await this.query(
+      connection,
+      `SELECT id FROM user WHERE email=? AND id<>?`,
+      [email, userId],
+    );
     if (userResult.length > 0) {
       throw new StatusCodeError('email already in use', 409);
     }
@@ -168,7 +262,11 @@ class DB {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();
     try {
-      await this.query(connection, `INSERT INTO auth (token, userId) VALUES (?, ?) ON DUPLICATE KEY UPDATE token=token`, [token, userId]);
+      await this.query(
+        connection,
+        `INSERT INTO auth (token, userId) VALUES (?, ?) ON DUPLICATE KEY UPDATE token=token`,
+        [token, userId],
+      );
     } finally {
       connection.end();
     }
@@ -178,7 +276,11 @@ class DB {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();
     try {
-      const authResult = await this.query(connection, `SELECT userId FROM auth WHERE token=?`, [token]);
+      const authResult = await this.query(
+        connection,
+        `SELECT userId FROM auth WHERE token=?`,
+        [token],
+      );
       return authResult.length > 0;
     } finally {
       connection.end();
@@ -199,9 +301,17 @@ class DB {
     const connection = await this.getConnection();
     try {
       const offset = this.getOffset(page, config.db.listPerPage);
-      const orders = await this.query(connection, `SELECT id, franchiseId, storeId, date FROM dinerOrder WHERE dinerId=? LIMIT ${offset},${config.db.listPerPage}`, [user.id]);
+      const orders = await this.query(
+        connection,
+        `SELECT id, franchiseId, storeId, date FROM dinerOrder WHERE dinerId=? LIMIT ${offset},${config.db.listPerPage}`,
+        [user.id],
+      );
       for (const order of orders) {
-        let items = await this.query(connection, `SELECT id, menuId, description, price FROM orderItem WHERE orderId=?`, [order.id]);
+        let items = await this.query(
+          connection,
+          `SELECT id, menuId, description, price FROM orderItem WHERE orderId=?`,
+          [order.id],
+        );
         order.items = items;
       }
       return { dinerId: user.id, orders: orders, page };
@@ -214,11 +324,19 @@ class DB {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
-      const orderResult = await this.query(connection, `INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())`, [user.id, order.franchiseId, order.storeId]);
+      const orderResult = await this.query(
+        connection,
+        `INSERT INTO dinerOrder (dinerId, franchiseId, storeId, date) VALUES (?, ?, ?, now())`,
+        [user.id, order.franchiseId, order.storeId],
+      );
       const orderId = orderResult.insertId;
       for (const item of order.items) {
         const menuId = await this.getID(connection, 'id', item.menuId, 'menu');
-        await this.query(connection, `INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)`, [orderId, menuId, item.description, item.price]);
+        await this.query(
+          connection,
+          `INSERT INTO orderItem (orderId, menuId, description, price) VALUES (?, ?, ?, ?)`,
+          [orderId, menuId, item.description, item.price],
+        );
       }
       await connection.commit();
       return { ...order, id: orderId };
@@ -233,25 +351,44 @@ class DB {
   async createFranchise(franchise) {
     const connection = await this.getConnection();
     try {
-      const existing = await this.query(connection, `SELECT id FROM franchise WHERE name=?`, [franchise.name]);
+      const existing = await this.query(
+        connection,
+        `SELECT id FROM franchise WHERE name=?`,
+        [franchise.name],
+      );
       if (existing.length > 0) {
         throw new StatusCodeError('franchise name already in use', 409);
       }
 
       for (const admin of franchise.admins) {
-        const adminUser = await this.query(connection, `SELECT id, name FROM user WHERE email=?`, [admin.email]);
+        const adminUser = await this.query(
+          connection,
+          `SELECT id, name FROM user WHERE email=?`,
+          [admin.email],
+        );
         if (adminUser.length == 0) {
-          throw new StatusCodeError(`unknown user for franchise admin ${admin.email} provided`, 404);
+          throw new StatusCodeError(
+            `unknown user for franchise admin ${admin.email} provided`,
+            404,
+          );
         }
         admin.id = adminUser[0].id;
         admin.name = adminUser[0].name;
       }
 
-      const franchiseResult = await this.query(connection, `INSERT INTO franchise (name) VALUES (?)`, [franchise.name]);
+      const franchiseResult = await this.query(
+        connection,
+        `INSERT INTO franchise (name) VALUES (?)`,
+        [franchise.name],
+      );
       franchise.id = franchiseResult.insertId;
 
       for (const admin of franchise.admins) {
-        await this.query(connection, `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`, [admin.id, Role.Franchisee, franchise.id]);
+        await this.query(
+          connection,
+          `INSERT INTO userRole (userId, role, objectId) VALUES (?, ?, ?)`,
+          [admin.id, Role.Franchisee, franchise.id],
+        );
       }
 
       return franchise;
@@ -268,9 +405,15 @@ class DB {
 
       await connection.beginTransaction();
       try {
-        await this.query(connection, `DELETE FROM store WHERE franchiseId=?`, [franchiseId]);
-        await this.query(connection, `DELETE FROM userRole WHERE objectId=?`, [franchiseId]);
-        await this.query(connection, `DELETE FROM franchise WHERE id=?`, [franchiseId]);
+        await this.query(connection, `DELETE FROM store WHERE franchiseId=?`, [
+          franchiseId,
+        ]);
+        await this.query(connection, `DELETE FROM userRole WHERE objectId=?`, [
+          franchiseId,
+        ]);
+        await this.query(connection, `DELETE FROM franchise WHERE id=?`, [
+          franchiseId,
+        ]);
         await connection.commit();
       } catch {
         await connection.rollback();
@@ -282,7 +425,11 @@ class DB {
   }
 
   async checkFranchiseExists(connection, franchiseId) {
-    const franchiseResult = await this.query(connection, `SELECT id FROM franchise WHERE id=?`, [franchiseId]);
+    const franchiseResult = await this.query(
+      connection,
+      `SELECT id FROM franchise WHERE id=?`,
+      [franchiseId],
+    );
     if (franchiseResult.length === 0) {
       throw new StatusCodeError('unknown franchise', 404);
     }
@@ -295,7 +442,11 @@ class DB {
     nameFilter = nameFilter.replace(/\*/g, '%');
 
     try {
-      let franchises = await this.query(connection, `SELECT id, name FROM franchise WHERE name LIKE ? LIMIT ${limit + 1} OFFSET ${offset}`, [nameFilter]);
+      let franchises = await this.query(
+        connection,
+        `SELECT id, name FROM franchise WHERE name LIKE ? LIMIT ${limit + 1} OFFSET ${offset}`,
+        [nameFilter],
+      );
 
       const more = franchises.length > limit;
       if (more) {
@@ -306,7 +457,11 @@ class DB {
         if (authUser?.isRole(Role.Admin)) {
           await this.getFranchise(franchise);
         } else {
-          franchise.stores = await this.query(connection, `SELECT id, name FROM store WHERE franchiseId=?`, [franchise.id]);
+          franchise.stores = await this.query(
+            connection,
+            `SELECT id, name FROM store WHERE franchiseId=?`,
+            [franchise.id],
+          );
         }
       }
       return [franchises, more];
@@ -318,13 +473,20 @@ class DB {
   async getUserFranchises(userId) {
     const connection = await this.getConnection();
     try {
-      let franchiseIds = await this.query(connection, `SELECT objectId FROM userRole WHERE role='franchisee' AND userId=?`, [userId]);
+      let franchiseIds = await this.query(
+        connection,
+        `SELECT objectId FROM userRole WHERE role='franchisee' AND userId=?`,
+        [userId],
+      );
       if (franchiseIds.length === 0) {
         return [];
       }
 
       franchiseIds = franchiseIds.map((v) => v.objectId);
-      const franchises = await this.query(connection, `SELECT id, name FROM franchise WHERE id in (${franchiseIds.join(',')})`);
+      const franchises = await this.query(
+        connection,
+        `SELECT id, name FROM franchise WHERE id in (${franchiseIds.join(',')})`,
+      );
       for (const franchise of franchises) {
         await this.getFranchise(franchise);
       }
@@ -337,9 +499,17 @@ class DB {
   async getFranchise(franchise) {
     const connection = await this.getConnection();
     try {
-      franchise.admins = await this.query(connection, `SELECT u.id, u.name, u.email FROM userRole AS ur JOIN user AS u ON u.id=ur.userId WHERE ur.objectId=? AND ur.role='franchisee'`, [franchise.id]);
+      franchise.admins = await this.query(
+        connection,
+        `SELECT u.id, u.name, u.email FROM userRole AS ur JOIN user AS u ON u.id=ur.userId WHERE ur.objectId=? AND ur.role='franchisee'`,
+        [franchise.id],
+      );
 
-      franchise.stores = await this.query(connection, `SELECT s.id, s.name, COALESCE(SUM(oi.price), 0) AS totalRevenue FROM dinerOrder AS do JOIN orderItem AS oi ON do.id=oi.orderId RIGHT JOIN store AS s ON s.id=do.storeId WHERE s.franchiseId=? GROUP BY s.id`, [franchise.id]);
+      franchise.stores = await this.query(
+        connection,
+        `SELECT s.id, s.name, COALESCE(SUM(oi.price), 0) AS totalRevenue FROM dinerOrder AS do JOIN orderItem AS oi ON do.id=oi.orderId RIGHT JOIN store AS s ON s.id=do.storeId WHERE s.franchiseId=? GROUP BY s.id`,
+        [franchise.id],
+      );
 
       return franchise;
     } finally {
@@ -351,7 +521,11 @@ class DB {
     const connection = await this.getConnection();
     try {
       await this.checkFranchiseExists(connection, franchiseId);
-      const insertResult = await this.query(connection, `INSERT INTO store (franchiseId, name) VALUES (?, ?)`, [franchiseId, store.name]);
+      const insertResult = await this.query(
+        connection,
+        `INSERT INTO store (franchiseId, name) VALUES (?, ?)`,
+        [franchiseId, store.name],
+      );
       return { id: insertResult.insertId, franchiseId, name: store.name };
     } finally {
       connection.end();
@@ -361,7 +535,11 @@ class DB {
   async deleteStore(franchiseId, storeId) {
     const connection = await this.getConnection();
     try {
-      const deleteResult = await this.query(connection, `DELETE FROM store WHERE franchiseId=? AND id=?`, [franchiseId, storeId]);
+      const deleteResult = await this.query(
+        connection,
+        `DELETE FROM store WHERE franchiseId=? AND id=?`,
+        [franchiseId, storeId],
+      );
       if (deleteResult.affectedRows === 0) {
         throw new StatusCodeError('unknown store', 404);
       }
@@ -388,7 +566,10 @@ class DB {
   }
 
   async getID(connection, key, value, table) {
-    const [rows] = await connection.execute(`SELECT id FROM ${table} WHERE ${key}=?`, [value]);
+    const [rows] = await connection.execute(
+      `SELECT id FROM ${table} WHERE ${key}=?`,
+      [value],
+    );
     if (rows.length > 0) {
       return rows[0].id;
     }
@@ -420,9 +601,13 @@ class DB {
       const connection = await this._getConnection(false);
       try {
         const dbExists = await this.checkDatabaseExists(connection);
-        console.log(dbExists ? 'Database exists' : 'Database does not exist, creating it');
+        console.log(
+          dbExists ? 'Database exists' : 'Database does not exist, creating it',
+        );
 
-        await connection.query(`CREATE DATABASE IF NOT EXISTS ${config.db.connection.database}`);
+        await connection.query(
+          `CREATE DATABASE IF NOT EXISTS ${config.db.connection.database}`,
+        );
         await connection.query(`USE ${config.db.connection.database}`);
 
         if (!dbExists) {
@@ -434,19 +619,33 @@ class DB {
         }
 
         if (!dbExists) {
-          const defaultAdmin = { name: '常用名字', email: 'a@jwt.com', password: 'admin', roles: [{ role: Role.Admin }] };
+          const defaultAdmin = {
+            name: '常用名字',
+            email: 'a@jwt.com',
+            password: 'admin',
+            roles: [{ role: Role.Admin }],
+          };
           this.addUser(defaultAdmin);
         }
       } finally {
         connection.end();
       }
     } catch (err) {
-      console.error(JSON.stringify({ message: 'Error initializing database', exception: err.message, connection: config.db.connection }));
+      console.error(
+        JSON.stringify({
+          message: 'Error initializing database',
+          exception: err.message,
+          connection: config.db.connection,
+        }),
+      );
     }
   }
 
   async checkDatabaseExists(connection) {
-    const [rows] = await connection.execute(`SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?`, [config.db.connection.database]);
+    const [rows] = await connection.execute(
+      `SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?`,
+      [config.db.connection.database],
+    );
     return rows.length > 0;
   }
 }

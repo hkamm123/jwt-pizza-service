@@ -23,8 +23,8 @@ async function createAdminUser() {
 }
 
 // Resolves to { user, token, password } so tests can log the diner back in.
-async function registerDiner() {
-  const diner = { name: 'pizza diner', email: randomEmail(), password: 'a' };
+async function registerDiner(name = 'pizza diner') {
+  const diner = { name, email: randomEmail(), password: 'a' };
   const registerRes = await request(app).post('/api/auth').send(diner);
   expect(registerRes.status).toBe(200);
   return { ...registerRes.body, password: diner.password };
