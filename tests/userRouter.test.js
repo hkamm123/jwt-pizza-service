@@ -1,5 +1,6 @@
 const request = require('supertest');
 const app = require('../src/service');
+const { DB } = require('../src/database/database.js');
 const {
   randomName,
   randomEmail,
@@ -49,6 +50,46 @@ test('list users', async () => {
   expect(listUsersRes.status).toBe(200);
   expect(listUsersRes.body.users).toEqual(expect.any(Array));
   expect(listUsersRes.body.users.length).toBeGreaterThan(0);
+});
+
+test('list users never returns passwords', async () => {
+  const listUsersRes = await listUsers(adminAuthToken);
+  expect(listUsersRes.status).toBe(200);
+  for (const user of listUsersRes.body.users) {
+    expect(user).not.toHaveProperty('password');
+  }
+});
+
+test('list users attaches each user their own roles', async () => {
+  const prefix = randomName();
+  const { user: franchisee } = await registerDiner(`${prefix} franchisee`);
+  const { user: diner } = await registerDiner(`${prefix} diner`);
+  const franchise = await DB.createFranchise({
+    name: 'franchise ' + randomName(),
+    admins: [{ email: franchisee.email }],
+  });
+
+  const listUsersRes = await listUsers(adminAuthToken, { name: `${prefix}*` });
+  expect(listUsersRes.status).toBe(200);
+  const [listedFranchisee, listedDiner] = listUsersRes.body.users;
+
+  expect(listedFranchisee.id).toBe(franchisee.id);
+  expect(listedFranchisee.roles).toHaveLength(2);
+  expect(listedFranchisee.roles).toEqual(
+    expect.arrayContaining([
+      { role: 'diner' },
+      { role: 'franchisee', objectId: franchise.id },
+    ]),
+  );
+
+  expect(listedDiner.id).toBe(diner.id);
+  expect(listedDiner.roles).toEqual([{ role: 'diner' }]);
+});
+
+test('list users allows the maximum limit', async () => {
+  const listUsersRes = await listUsers(adminAuthToken, { limit: 100 });
+  expect(listUsersRes.status).toBe(200);
+  expect(listUsersRes.body.users.length).toBeLessThanOrEqual(100);
 });
 
 test('list users pages through results', async () => {
@@ -116,6 +157,9 @@ test.each([
   { limit: 'abc' },
   { limit: -1 },
   { limit: 1.5 },
+  { limit: 0 },
+  { limit: 101 },
+  'name=a&name=b',
 ])('list users responds 400 when query is %o', async (query) => {
   const listUsersRes = await listUsers(adminAuthToken, query);
   expectResponse(listUsersRes, 400, { message: 'bad request' });

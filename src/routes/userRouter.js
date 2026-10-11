@@ -82,6 +82,12 @@ userRouter.get(
     }
     const page = parseQueryInt(req.query.page);
     const limit = parseQueryInt(req.query.limit);
+    if (limit === 0 || limit > 100) {
+      return res.status(400).json({ message: 'bad request' });
+    }
+    if (req.query.name && typeof req.query.name !== 'string') {
+      return res.status(400).json({ message: 'bad request' });
+    }
     const [users, more] = await DB.getUsers(page, limit, req.query.name);
     res.json({ users, more });
   }),
