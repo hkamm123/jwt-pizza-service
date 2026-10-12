@@ -24,6 +24,27 @@ test('delete user', async () => {
   expect(loginRes.status).toBe(401);
 });
 
+test('delete user invalidates the deleted user\'s existing token', async () => {
+  const { user, token } = await registerDiner();
+
+  await deleteUser(adminAuthToken, user.id);
+
+  const meRes = await request(app)
+    .get('/api/user/me')
+    .set('Authorization', `Bearer ${token}`);
+  expectResponse(meRes, 401, { message: 'unauthorized' });
+});
+
+test('delete user responds 401 without a token', async () => {
+  const { user, password } = await registerDiner();
+
+  const deleteRes = await request(app).delete(`/api/user/${user.id}`);
+  expectResponse(deleteRes, 401, { message: 'unauthorized' });
+
+  const loginRes = await login({ email: user.email, password });
+  expect(loginRes.status).toBe(200);
+});
+
 test('delete user responds 403 when not admin', async () => {
   const diner = await registerDiner();
   const otherDiner = await registerDiner();
@@ -34,6 +55,21 @@ test('delete user responds 403 when not admin', async () => {
 
     const loginRes = await login({ email: target.user.email, password: target.password });
     expect(loginRes.status).toBe(200);
+  }
+});
+
+test('delete user responds 404 when user does not exist', async () => {
+  const { user } = await registerDiner();
+  await deleteUser(adminAuthToken, user.id);
+
+  const deleteRes = await deleteUser(adminAuthToken, user.id);
+  expectResponse(deleteRes, 404, { message: 'unknown user' });
+});
+
+test('delete user responds 400 when userId is not a positive integer', async () => {
+  for (const userId of ['abc', '1.5', '-1', '1e3', '0x10']) {
+    const deleteRes = await deleteUser(adminAuthToken, userId);
+    expectResponse(deleteRes, 400, { message: 'bad request' });
   }
 });
 

@@ -120,7 +120,7 @@ userRouter.delete(
       return res.status(403).json({ message: 'unauthorized' });
     }
 
-    await DB.deleteUser(Number(req.params.userId));
+    await DB.deleteUser(parseQueryInt(req.params.userId));
     res.json({ message: 'User deleted successfully' });
   }),
 );
