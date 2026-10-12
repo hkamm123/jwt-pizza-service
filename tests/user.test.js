@@ -58,6 +58,20 @@ test('delete user responds 403 when not admin', async () => {
   }
 });
 
+test('delete user responds 403 when admin deletes themselves', async () => {
+  const admin = await createAdminUser();
+  const loginRes = await login({ email: admin.email, password: admin.password });
+  const { user, token } = loginRes.body;
+
+  const deleteRes = await deleteUser(token, user.id);
+  expectResponse(deleteRes, 403, { message: 'cannot delete yourself' });
+
+  const meRes = await request(app)
+    .get('/api/user/me')
+    .set('Authorization', `Bearer ${token}`);
+  expect(meRes.status).toBe(200);
+});
+
 test('delete user responds 404 when user does not exist', async () => {
   const { user } = await registerDiner();
   await deleteUser(adminAuthToken, user.id);
