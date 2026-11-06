@@ -48,6 +48,12 @@ jobs:
               url: 'https://pizza-factory.cs329.click',
               apiKey: '${{ secrets.FACTORY_API_KEY }}',
             },
+            metrics: {
+              source: 'jwt-pizza-service',
+              endpointUrl: 'https://otlp-gateway-prod-us-east-3.grafana.net/otlp/v1/metrics',
+              accountId: '${{ secrets.METRICS_ACCOUNT_ID }}',
+              apiKey: '${{ secrets.METRICS_API_KEY }}',
+            },
           };" > src/config.js
 
       - name: Install dependencies
