@@ -2,6 +2,7 @@ const request = require('supertest');
 const config = require('../src/config.js');
 const app = require('../src/service.js');
 const metrics = require('../src/metrics.js');
+const { DB } = require('../src/database/database.js');
 const { registerDiner, login, loginUser } = require('../src/testUtils.js');
 
 const realMetricsConfig = config.metrics;
@@ -181,4 +182,70 @@ test('instance id is stable within a process and unique across processes', () =>
     otherProcess = require('../src/metrics.js');
   });
   expect(instanceIdOf(otherProcess)).not.toBe(instanceIdOf(metrics));
+});
+
+describe('auth attempts', () => {
+  function authCounts() {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'auth_attempts');
+    return Object.fromEntries(metric.sum.dataPoints.map((p) => [p.attributes[0].value.stringValue, p.asInt]));
+  }
+
+  async function authCountChange(fn) {
+    const before = authCounts();
+    await fn();
+    const after = authCounts();
+    return { success: after.success - before.success, failure: after.failure - before.failure };
+  }
+
+  test('is a cumulative counter with success and failure from the start', () => {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'auth_attempts');
+    expect(metric.sum.isMonotonic).toBe(true);
+    expect(Object.keys(authCounts()).sort()).toEqual(['failure', 'success']);
+  });
+
+  test('a successful login counts as a success', async () => {
+    const { user, password } = await registerDiner();
+    const change = await authCountChange(() => loginUser({ email: user.email, password }));
+    expect(change).toEqual({ success: 1, failure: 0 });
+  });
+
+  test('a wrong password counts as a failure and still returns 401', async () => {
+    const { user } = await registerDiner();
+    let res;
+    const change = await authCountChange(async () => {
+      res = await login({ email: user.email, password: 'wrong' });
+    });
+    expect(change).toEqual({ success: 0, failure: 1 });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('unknown user');
+  });
+
+  test('an unknown email counts as a failure', async () => {
+    const change = await authCountChange(() => login({ email: 'nobody@jwt.com', password: 'bad' }));
+    expect(change).toEqual({ success: 0, failure: 1 });
+  });
+
+  test('a missing password counts as a failure and still returns 400', async () => {
+    let res;
+    const change = await authCountChange(async () => {
+      res = await login({ email: 'nobody@jwt.com' });
+    });
+    expect(change).toEqual({ success: 0, failure: 1 });
+    expect(res.status).toBe(400);
+  });
+
+  test('a server error is not counted as a failed login', async () => {
+    jest.spyOn(DB, 'getUser').mockRejectedValue(new Error('database is down'));
+    let res;
+    const change = await authCountChange(async () => {
+      res = await login({ email: 'nobody@jwt.com', password: 'bad' });
+    });
+    expect(change).toEqual({ success: 0, failure: 0 });
+    expect(res.status).toBe(500);
+  });
+
+  test('registering is not an auth attempt', async () => {
+    const change = await authCountChange(() => registerDiner());
+    expect(change).toEqual({ success: 0, failure: 0 });
+  });
 });

@@ -8,6 +8,8 @@ const instanceId = crypto.randomUUID();
 const requestsByMethod = { GET: 0, POST: 0, PUT: 0, DELETE: 0 };
 let totalRequests = 0;
 
+const authAttempts = { success: 0, failure: 0 };
+
 const ACTIVE_USERS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const activeUsers = new Map(); // Map of userId to last activity timestamp
 
@@ -35,6 +37,10 @@ function activeUserTracker(req, res, next) {
     userActive(req.user.id);
   }
   next();
+}
+
+function authAttempt(result) {
+  authAttempts[result]++;
 }
 
 function countActiveUsers(now = Date.now()) {
@@ -85,6 +91,10 @@ function buildPayload(now = Date.now()) {
     point(count, [attribute('method', method)]),
   );
 
+  const byResult = Object.entries(authAttempts).map(([result, count]) =>
+    point(count, [attribute('result', result)]),
+  );
+
   return {
     resourceMetrics: [
       {
@@ -102,6 +112,7 @@ function buildPayload(now = Date.now()) {
             metrics: [
               counterMetric('http_requests', byMethod),
               counterMetric('http_requests_all', [point(totalRequests)]),
+              counterMetric('auth_attempts', byResult),
               gaugeMetric('active_users', [
                 { asInt: countActiveUsers(now), timeUnixNano },
               ]),
@@ -153,6 +164,7 @@ module.exports = {
   countActiveUsers,
   userActive,
   userLoggedOut,
+  authAttempt,
   buildPayload,
   sendMetrics,
   startMetrics,

@@ -75,12 +75,21 @@ authRouter.post(
 authRouter.put(
   '/',
   asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      throw new StatusCodeError('bad request', 400);
-    };
-    const user = await DB.getUser(email, password);
+    let user;
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        throw new StatusCodeError('bad request', 400);
+      }
+      user = await DB.getUser(email, password);
+    } catch (err) {
+      if (err.statusCode === 400 || err.statusCode === 401) {
+        metrics.authAttempt('failure');
+      }
+      throw err;
+    }
     const auth = await setAuth(user);
+    metrics.authAttempt('success');
     metrics.userActive(user.id);
     res.json({ user: user, token: auth });
   })
