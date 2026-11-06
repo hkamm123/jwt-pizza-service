@@ -1,4 +1,9 @@
+const crypto = require('crypto');
 const config = require('./config.js');
+
+// Unique per process, so each ECS task gets its own series in Grafana
+// (e.g. while old and new tasks overlap during a rolling deploy).
+const instanceId = crypto.randomUUID();
 
 const requestsByMethod = { GET: 0, POST: 0, PUT: 0, DELETE: 0 };
 let totalRequests = 0;
@@ -86,6 +91,7 @@ function buildPayload(now = Date.now()) {
               'service.name',
               config.metrics?.source ?? 'jwt-pizza-service',
             ),
+            attribute('service.instance.id', instanceId),
           ],
         },
         scopeMetrics: [

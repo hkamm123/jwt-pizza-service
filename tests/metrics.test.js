@@ -43,8 +43,10 @@ test('counts requests by method and in total', async () => {
 
 test('payload is a cumulative OTLP counter', () => {
   const payload = metrics.buildPayload(1700000000000);
-  const resourceAttr = payload.resourceMetrics[0].resource.attributes[0];
-  expect(resourceAttr).toEqual({ key: 'service.name', value: { stringValue: 'test-service' } });
+  const [serviceName, instance] = payload.resourceMetrics[0].resource.attributes;
+  expect(serviceName).toEqual({ key: 'service.name', value: { stringValue: 'test-service' } });
+  expect(instance.key).toBe('service.instance.id');
+  expect(instance.value.stringValue).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
   const [byMethod, all] = payload.resourceMetrics[0].scopeMetrics[0].metrics;
   expect(byMethod.name).toBe('http_requests');
@@ -142,4 +144,16 @@ describe('active users', () => {
     expect(metric.gauge.dataPoints[0].asInt).toBeGreaterThan(0);
     expect(metric.gauge.dataPoints[0].startTimeUnixNano).toBeUndefined();
   });
+});
+
+test('instance id is stable within a process and unique across processes', () => {
+  const instanceIdOf = (m) => m.buildPayload().resourceMetrics[0].resource.attributes.find((a) => a.key === 'service.instance.id').value.stringValue;
+
+  expect(instanceIdOf(metrics)).toBe(instanceIdOf(metrics));
+
+  let otherProcess;
+  jest.isolateModules(() => {
+    otherProcess = require('../src/metrics.js');
+  });
+  expect(instanceIdOf(otherProcess)).not.toBe(instanceIdOf(metrics));
 });
