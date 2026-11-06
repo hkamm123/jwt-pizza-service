@@ -2,7 +2,7 @@ const request = require('supertest');
 const config = require('../src/config.js');
 const app = require('../src/service.js');
 const metrics = require('../src/metrics.js');
-const { registerDiner } = require('../src/testUtils.js');
+const { registerDiner, login, loginUser } = require('../src/testUtils.js');
 
 const realMetricsConfig = config.metrics;
 
@@ -90,13 +90,37 @@ test('startMetrics only runs when configured', () => {
 describe('active users', () => {
   const TEN_MINUTES = 10 * 60 * 1000;
 
-  // Registering doesn't send a token, so it doesn't count as activity.
-  // An authenticated request afterwards does.
-  async function activeDiner() {
-    const { user, token } = await registerDiner();
-    await request(app).get('/api/user/me').set('Authorization', `Bearer ${token}`);
-    return { user, token };
+  // Registering counts as activity, so a fresh diner is already active.
+  const activeDiner = registerDiner;
+
+  function logout(token) {
+    return request(app).delete('/api/auth').set('Authorization', `Bearer ${token}`);
   }
+
+  test('registering counts as activity', async () => {
+    const before = metrics.countActiveUsers();
+    await registerDiner();
+    expect(metrics.countActiveUsers() - before).toBe(1);
+  });
+
+  test('logging in counts as activity with no other requests', async () => {
+    const { user, token, password } = await registerDiner();
+    await logout(token);
+    const before = metrics.countActiveUsers();
+
+    await loginUser({ email: user.email, password });
+    expect(metrics.countActiveUsers() - before).toBe(1);
+  });
+
+  test('a failed login does not count', async () => {
+    const { user, token } = await registerDiner();
+    await logout(token);
+    const before = metrics.countActiveUsers();
+
+    const loginRes = await login({ email: user.email, password: 'wrong' });
+    expect(loginRes.status).not.toBe(200);
+    expect(metrics.countActiveUsers()).toBe(before);
+  });
 
   test('counts a user once no matter how many requests they make', async () => {
     const before = metrics.countActiveUsers();
@@ -141,6 +165,7 @@ describe('active users', () => {
     await activeDiner();
     const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'active_users');
     expect(metric.sum).toBeUndefined();
+    expect(metric.unit).toBe('{user}'); // unit '1' made Grafana name it active_users_ratio
     expect(metric.gauge.dataPoints[0].asInt).toBeGreaterThan(0);
     expect(metric.gauge.dataPoints[0].startTimeUnixNano).toBeUndefined();
   });

@@ -19,17 +19,20 @@ function requestTracker(req, res, next) {
   next();
 }
 
-function isLogout(req) {
-  return req.method === 'DELETE' && req.path.replace(/\/$/, '') === '/api/auth';
+function userActive(userId) {
+  activeUsers.set(userId, Date.now());
 }
 
+function userLoggedOut(userId) {
+  activeUsers.delete(userId);
+}
+
+// Any request with a valid token counts as activity. Login, register and
+// logout don't arrive with a usable req.user, so authRouter calls
+// userActive / userLoggedOut for those directly.
 function activeUserTracker(req, res, next) {
   if (req.user) {
-    if (isLogout(req)) {
-      activeUsers.delete(req.user.id);
-    } else {
-      activeUsers.set(req.user.id, Date.now());
-    }
+    userActive(req.user.id);
   }
   next();
 }
@@ -56,7 +59,7 @@ function attribute(key, value) {
 function counterMetric(name, dataPoints) {
   return {
     name,
-    unit: '1',
+    unit: '{request}',
     sum: {
       aggregationTemporality: 'AGGREGATION_TEMPORALITY_CUMULATIVE',
       isMonotonic: true,
@@ -66,7 +69,7 @@ function counterMetric(name, dataPoints) {
 }
 
 function gaugeMetric(name, dataPoints) {
-  return { name, unit: '1', gauge: { dataPoints } };
+  return { name, unit: '{user}', gauge: { dataPoints } };
 }
 
 function buildPayload(now = Date.now()) {
@@ -148,6 +151,8 @@ module.exports = {
   requestTracker,
   activeUserTracker,
   countActiveUsers,
+  userActive,
+  userLoggedOut,
   buildPayload,
   sendMetrics,
   startMetrics,
