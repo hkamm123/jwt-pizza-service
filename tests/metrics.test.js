@@ -2,6 +2,7 @@ const request = require('supertest');
 const config = require('../src/config.js');
 const app = require('../src/service.js');
 const metrics = require('../src/metrics.js');
+const { registerDiner } = require('../src/testUtils.js');
 
 const realMetricsConfig = config.metrics;
 
@@ -82,4 +83,63 @@ test('startMetrics only runs when configured', () => {
   config.metrics = undefined;
   jest.spyOn(console, 'log').mockImplementation(() => {});
   expect(metrics.startMetrics()).toBeNull();
+});
+
+describe('active users', () => {
+  const TEN_MINUTES = 10 * 60 * 1000;
+
+  // Registering doesn't send a token, so it doesn't count as activity.
+  // An authenticated request afterwards does.
+  async function activeDiner() {
+    const { user, token } = await registerDiner();
+    await request(app).get('/api/user/me').set('Authorization', `Bearer ${token}`);
+    return { user, token };
+  }
+
+  test('counts a user once no matter how many requests they make', async () => {
+    const before = metrics.countActiveUsers();
+    const { token } = await activeDiner();
+    await request(app).get('/api/user/me').set('Authorization', `Bearer ${token}`);
+    await request(app).get('/api/order').set('Authorization', `Bearer ${token}`);
+    expect(metrics.countActiveUsers() - before).toBe(1);
+  });
+
+  test('does not count anonymous requests', async () => {
+    const before = metrics.countActiveUsers();
+    await request(app).get('/');
+    await request(app).get('/api/order/menu');
+    expect(metrics.countActiveUsers()).toBe(before);
+  });
+
+  test.each(['/api/auth', '/api/auth/'])('logout via DELETE %s removes the user', async (path) => {
+    const before = metrics.countActiveUsers();
+    const { token } = await activeDiner();
+    expect(metrics.countActiveUsers() - before).toBe(1);
+
+    const logoutRes = await request(app).delete(path).set('Authorization', `Bearer ${token}`);
+    expect(logoutRes.status).toBe(200);
+    expect(metrics.countActiveUsers()).toBe(before);
+  });
+
+  test('other DELETE requests keep the user active', async () => {
+    const before = metrics.countActiveUsers();
+    const { token } = await activeDiner();
+    await request(app).delete('/api/franchise/999999').set('Authorization', `Bearer ${token}`);
+    expect(metrics.countActiveUsers() - before).toBe(1);
+  });
+
+  test('users drop out after 10 minutes without a request', async () => {
+    await activeDiner();
+    expect(metrics.countActiveUsers()).toBeGreaterThan(0);
+    expect(metrics.countActiveUsers(Date.now() + TEN_MINUTES - 1000)).toBeGreaterThan(0);
+    expect(metrics.countActiveUsers(Date.now() + TEN_MINUTES + 1000)).toBe(0);
+  });
+
+  test('is sent as a gauge', async () => {
+    await activeDiner();
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'active_users');
+    expect(metric.sum).toBeUndefined();
+    expect(metric.gauge.dataPoints[0].asInt).toBeGreaterThan(0);
+    expect(metric.gauge.dataPoints[0].startTimeUnixNano).toBeUndefined();
+  });
 });

@@ -11,6 +11,7 @@ const app = express();
 app.use(metrics.requestTracker);
 app.use(express.json());
 app.use(setAuthUser);
+app.use(metrics.activeUserTracker);
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
