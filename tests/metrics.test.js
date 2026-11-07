@@ -249,3 +249,31 @@ describe('auth attempts', () => {
     expect(change).toEqual({ success: 0, failure: 0 });
   });
 });
+
+describe('system metrics', () => {
+  const os = require('os');
+
+  function gauge(name) {
+    return metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
+  }
+
+  test('cpu is the 1-minute load average spread across cores', () => {
+    jest.spyOn(os, 'loadavg').mockReturnValue([1, 0.5, 0.25]);
+    jest.spyOn(os, 'cpus').mockReturnValue(new Array(4).fill({}));
+    expect(metrics.getCpuUsagePercentage()).toBe(25);
+  });
+
+  test('memory is used / total', () => {
+    jest.spyOn(os, 'totalmem').mockReturnValue(3000);
+    jest.spyOn(os, 'freemem').mockReturnValue(1000);
+    expect(metrics.getMemoryUsagePercentage()).toBe(66.67);
+  });
+
+  test.each(['cpu_usage_percent', 'memory_usage_percent'])('%s is sent as a numeric percent gauge', (name) => {
+    const metric = gauge(name);
+    expect(metric.unit).toBe('%');
+    expect(metric.sum).toBeUndefined();
+    expect(typeof metric.gauge.dataPoints[0].asDouble).toBe('number');
+    expect(metric.gauge.dataPoints[0].asDouble).toBeGreaterThanOrEqual(0);
+  });
+});

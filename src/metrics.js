@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const os = require('os');
 const config = require('./config.js');
 
 // Unique per process, so each ECS task gets its own series in Grafana
@@ -43,6 +44,21 @@ function authAttempt(result) {
   authAttempts[result]++;
 }
 
+function getCpuUsagePercentage() {
+  const load = os.loadavg()[0] / os.cpus().length;
+  return round2(load * 100);
+}
+
+function getMemoryUsagePercentage() {
+  const total = os.totalmem();
+  const used = total - os.freemem();
+  return round2((used / total) * 100);
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
 function countActiveUsers(now = Date.now()) {
   for (const [userId, lastSeen] of activeUsers) {
     if (now - lastSeen > ACTIVE_USERS_WINDOW_MS) {
@@ -74,8 +90,8 @@ function counterMetric(name, dataPoints) {
   };
 }
 
-function gaugeMetric(name, dataPoints) {
-  return { name, unit: '{user}', gauge: { dataPoints } };
+function gaugeMetric(name, unit, dataPoints) {
+  return { name, unit, gauge: { dataPoints } };
 }
 
 function buildPayload(now = Date.now()) {
@@ -113,8 +129,14 @@ function buildPayload(now = Date.now()) {
               counterMetric('http_requests', byMethod),
               counterMetric('http_requests_all', [point(totalRequests)]),
               counterMetric('auth_attempts', byResult),
-              gaugeMetric('active_users', [
+              gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
+              ]),
+              gaugeMetric('cpu_usage_percent', '%', [
+                { asDouble: getCpuUsagePercentage(), timeUnixNano },
+              ]),
+              gaugeMetric('memory_usage_percent', '%', [
+                { asDouble: getMemoryUsagePercentage(), timeUnixNano },
               ]),
             ],
           },
@@ -165,6 +187,8 @@ module.exports = {
   userActive,
   userLoggedOut,
   authAttempt,
+  getCpuUsagePercentage,
+  getMemoryUsagePercentage,
   buildPayload,
   sendMetrics,
   startMetrics,
