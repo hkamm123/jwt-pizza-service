@@ -3,7 +3,7 @@ const config = require('../src/config.js');
 const app = require('../src/service.js');
 const metrics = require('../src/metrics.js');
 const { DB } = require('../src/database/database.js');
-const { registerDiner, login, loginUser } = require('../src/testUtils.js');
+const { randomName, createAdminUser, registerDiner, login, loginUser, createOrder, mockFactory } = require('../src/testUtils.js');
 
 const realMetricsConfig = config.metrics;
 
@@ -275,5 +275,55 @@ describe('system metrics', () => {
     expect(metric.sum).toBeUndefined();
     expect(typeof metric.gauge.dataPoints[0].asDouble).toBe('number');
     expect(metric.gauge.dataPoints[0].asDouble).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('pizzas sold', () => {
+  let menuItem;
+  let franchise;
+  let store;
+
+  beforeAll(async () => {
+    const adminUser = await createAdminUser();
+    menuItem = await DB.addMenuItem({ title: 'Metrics Pie ' + randomName(), description: 'For counting', image: 'pizza1.png', price: 0.001 });
+    franchise = await DB.createFranchise({ name: 'franchise ' + randomName(), admins: [{ email: adminUser.email }] });
+    store = await DB.createStore(franchise.id, { name: 'store ' + randomName() });
+  });
+
+  function pizzasSold() {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'pizzas_sold');
+    return metric.sum.dataPoints[0].asInt;
+  }
+
+  function orderOf(count) {
+    const item = { menuId: menuItem.id, description: menuItem.title, price: menuItem.price };
+    return { franchiseId: franchise.id, storeId: store.id, items: new Array(count).fill(item) };
+  }
+
+  test('counts every pizza in an order the factory accepts', async () => {
+    const { token } = await registerDiner();
+    mockFactory(true, { reportUrl: 'https://factory.test/report', jwt: 'factory.issued.jwt' });
+    const before = pizzasSold();
+
+    const orderRes = await createOrder(token, orderOf(3));
+    expect(orderRes.status).toBe(200);
+    expect(pizzasSold() - before).toBe(3);
+  });
+
+  test('does not count pizzas the factory rejects', async () => {
+    const { token } = await registerDiner();
+    mockFactory(false, { reportUrl: 'https://factory.test/report' });
+    const before = pizzasSold();
+
+    const orderRes = await createOrder(token, orderOf(2));
+    expect(orderRes.status).toBe(500);
+    expect(pizzasSold()).toBe(before);
+  });
+
+  test('is a cumulative counter', () => {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'pizzas_sold');
+    expect(metric.unit).toBe('{pizza}');
+    expect(metric.sum.isMonotonic).toBe(true);
+    expect(metric.sum.aggregationTemporality).toBe('AGGREGATION_TEMPORALITY_CUMULATIVE');
   });
 });

@@ -51,6 +51,15 @@ function expectValidJwt(potentialJwt) {
   );
 }
 
+function createOrder(token, orderReq) {
+  return request(app).post('/api/order').set('Authorization', `Bearer ${token}`).send(orderReq);
+}
+
+// Stand in for the pizza factory so tests never place real orders with the real API key.
+function mockFactory(ok, body) {
+  return jest.spyOn(global, 'fetch').mockResolvedValue({ ok, json: async () => body });
+}
+
 module.exports = {
   randomName,
   randomEmail,
@@ -60,4 +69,6 @@ module.exports = {
   loginUser,
   expectResponse,
   expectValidJwt,
+  createOrder,
+  mockFactory,
 };

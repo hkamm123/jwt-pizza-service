@@ -11,6 +11,8 @@ let totalRequests = 0;
 
 const authAttempts = { success: 0, failure: 0 };
 
+let pizzasSold = 0;
+
 const ACTIVE_USERS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const activeUsers = new Map(); // Map of userId to last activity timestamp
 
@@ -42,6 +44,12 @@ function activeUserTracker(req, res, next) {
 
 function authAttempt(result) {
   authAttempts[result]++;
+}
+
+function pizzaPurchase(success, order) {
+  if (success) {
+    pizzasSold += order.items.length;
+  }
 }
 
 function getCpuUsagePercentage() {
@@ -78,10 +86,10 @@ function attribute(key, value) {
   return { key, value: { stringValue: value } };
 }
 
-function counterMetric(name, dataPoints) {
+function counterMetric(name, unit, dataPoints) {
   return {
     name,
-    unit: '{request}',
+    unit,
     sum: {
       aggregationTemporality: 'AGGREGATION_TEMPORALITY_CUMULATIVE',
       isMonotonic: true,
@@ -126,9 +134,12 @@ function buildPayload(now = Date.now()) {
         scopeMetrics: [
           {
             metrics: [
-              counterMetric('http_requests', byMethod),
-              counterMetric('http_requests_all', [point(totalRequests)]),
-              counterMetric('auth_attempts', byResult),
+              counterMetric('http_requests', '{request}', byMethod),
+              counterMetric('http_requests_all', '{request}', [
+                point(totalRequests),
+              ]),
+              counterMetric('auth_attempts', '{request}', byResult),
+              counterMetric('pizzas_sold', '{pizza}', [point(pizzasSold)]),
               gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
               ]),
@@ -187,6 +198,7 @@ module.exports = {
   userActive,
   userLoggedOut,
   authAttempt,
+  pizzaPurchase,
   getCpuUsagePercentage,
   getMemoryUsagePercentage,
   buildPayload,

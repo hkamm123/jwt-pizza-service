@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../src/service');
 const { DB } = require('../src/database/database.js');
-const { randomName, createAdminUser, registerDiner, loginUser, expectResponse } = require('../src/testUtils.js');
+const { randomName, createAdminUser, registerDiner, loginUser, expectResponse, createOrder, mockFactory } = require('../src/testUtils.js');
 
 let adminAuthToken;
 let menuItem;
@@ -137,16 +137,4 @@ function getOrders(token) {
   return request(app)
     .get('/api/order')
     .set('Authorization', `Bearer ${token}`);
-}
-
-function createOrder(token, orderReq) {
-  return request(app)
-    .post('/api/order')
-    .set('Authorization', `Bearer ${token}`)
-    .send(orderReq);
-}
-
-// Stand in for the pizza factory so tests never place real orders with the real API key.
-function mockFactory(ok, body) {
-  return jest.spyOn(global, 'fetch').mockResolvedValue({ ok, json: async () => body });
 }
