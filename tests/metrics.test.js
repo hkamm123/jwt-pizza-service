@@ -290,13 +290,14 @@ describe('pizza orders', () => {
     store = await DB.createStore(franchise.id, { name: 'store ' + randomName() });
   });
 
-  function counterValue(name) {
+  function counterValue(name, valueType = 'asInt') {
     const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
-    return metric.sum.dataPoints[0].asInt;
+    return metric.sum.dataPoints[0][valueType];
   }
 
   const pizzasSold = () => counterValue('pizzas_sold');
   const pizzaFailures = () => counterValue('pizza_creation_failures');
+  const revenue = () => counterValue('pizza_revenue', 'asDouble');
 
   function orderOf(count) {
     const item = { menuId: menuItem.id, description: menuItem.title, price: menuItem.price };
@@ -351,6 +352,32 @@ describe('pizza orders', () => {
     const invalidRes = await createOrder(token, { ...orderOf(1), items: [{ menuId: -1, description: 'nope', price: 1 }] });
     expect(invalidRes.status).toBe(404);
     expect(pizzaFailures()).toBe(before);
+  });
+
+  test('revenue adds the price of every pizza in an accepted order', async () => {
+    const { token } = await registerDiner();
+    mockFactory(true, { reportUrl: 'https://factory.test/report', jwt: 'factory.issued.jwt' });
+    const before = revenue();
+
+    await createOrder(token, orderOf(3));
+    expect(revenue() - before).toBeCloseTo(3 * menuItem.price, 10);
+  });
+
+  test('rejected orders earn no revenue', async () => {
+    const { token } = await registerDiner();
+    mockFactory(false, { reportUrl: 'https://factory.test/report' });
+    const before = revenue();
+
+    await createOrder(token, orderOf(2));
+    expect(revenue()).toBe(before);
+  });
+
+  test('revenue is a cumulative counter of fractional bitcoin', () => {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'pizza_revenue');
+    expect(metric.unit).toBe('{BTC}');
+    expect(metric.sum.isMonotonic).toBe(true);
+    expect(typeof metric.sum.dataPoints[0].asDouble).toBe('number');
+    expect(metric.sum.dataPoints[0].asInt).toBeUndefined();
   });
 
   test.each(['pizzas_sold', 'pizza_creation_failures'])('%s is a cumulative counter', (name) => {

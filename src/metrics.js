@@ -13,6 +13,7 @@ const authAttempts = { success: 0, failure: 0 };
 
 let pizzasSold = 0;
 let pizzaFailures = 0;
+let revenue = 0; // in bitcoin, like the menu prices
 
 const ACTIVE_USERS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const activeUsers = new Map(); // Map of userId to last activity timestamp
@@ -50,6 +51,7 @@ function authAttempt(result) {
 function pizzaPurchase(success, order) {
   if (success) {
     pizzasSold += order.items.length;
+    revenue += order.items.reduce((sum, item) => sum + item.price, 0);
   } else {
     pizzaFailures += order.items.length;
   }
@@ -107,8 +109,8 @@ function gaugeMetric(name, unit, dataPoints) {
 
 function buildPayload(now = Date.now()) {
   const timeUnixNano = toUnixNano(now);
-  const point = (value, attributes = []) => ({
-    asInt: value,
+  const point = (value, attributes = [], valueType = 'asInt') => ({
+    [valueType]: value,
     startTimeUnixNano,
     timeUnixNano,
     attributes,
@@ -145,6 +147,9 @@ function buildPayload(now = Date.now()) {
               counterMetric('pizzas_sold', '{pizza}', [point(pizzasSold)]),
               counterMetric('pizza_creation_failures', '{pizza}', [
                 point(pizzaFailures),
+              ]),
+              counterMetric('pizza_revenue', '{BTC}', [
+                point(revenue, [], 'asDouble'),
               ]),
               gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
