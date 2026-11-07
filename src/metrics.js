@@ -15,6 +15,9 @@ let pizzasSold = 0;
 let pizzaFailures = 0;
 let revenue = 0; // in bitcoin, like the menu prices
 
+let latencySumMs = 0;
+let latencyCount = 0;
+
 const ACTIVE_USERS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const activeUsers = new Map(); // Map of userId to last activity timestamp
 
@@ -23,6 +26,15 @@ const startTimeUnixNano = toUnixNano(Date.now());
 function requestTracker(req, res, next) {
   requestsByMethod[req.method] = (requestsByMethod[req.method] ?? 0) + 1;
   totalRequests++;
+  next();
+}
+
+function latencyTracker(req, res, next) {
+  const start = performance.now();
+  res.on('finish', () => {
+    latencySumMs += performance.now() - start;
+    latencyCount++;
+  });
   next();
 }
 
@@ -151,6 +163,12 @@ function buildPayload(now = Date.now()) {
               counterMetric('pizza_revenue', '{BTC}', [
                 point(revenue, [], 'asDouble'),
               ]),
+              counterMetric('http_request_latency_milliseconds', 'ms', [
+                point(latencySumMs, [], 'asDouble'),
+              ]),
+              counterMetric('http_requests_timed', '{request}', [
+                point(latencyCount),
+              ]),
               gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
               ]),
@@ -204,6 +222,7 @@ function startMetrics(periodMs = 10000) {
 
 module.exports = {
   requestTracker,
+  latencyTracker,
   activeUserTracker,
   countActiveUsers,
   userActive,

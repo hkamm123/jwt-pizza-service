@@ -8,6 +8,7 @@ const config = require('./config.js');
 const metrics = require('./metrics.js');
 
 const app = express();
+app.use(metrics.latencyTracker);
 app.use(metrics.requestTracker);
 app.use(express.json());
 app.use(setAuthUser);

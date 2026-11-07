@@ -387,3 +387,62 @@ describe('pizza orders', () => {
     expect(metric.sum.aggregationTemporality).toBe('AGGREGATION_TEMPORALITY_CUMULATIVE');
   });
 });
+
+describe('request latency', () => {
+  const { EventEmitter } = require('events');
+
+  function latency() {
+    const all = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics;
+    const sum = all.find((m) => m.name === 'http_request_latency_milliseconds');
+    const count = all.find((m) => m.name === 'http_requests_timed');
+    return { sum: sum.sum.dataPoints[0].asDouble, count: count.sum.dataPoints[0].asInt };
+  }
+
+  // A fake response is just something that can emit 'finish' or 'close'.
+  function timeFakeRequest(startMs, endMs, event = 'finish') {
+    jest.spyOn(performance, 'now').mockReturnValueOnce(startMs).mockReturnValueOnce(endMs);
+    const res = new EventEmitter();
+    const next = jest.fn();
+    metrics.latencyTracker({}, res, next);
+    expect(next).toHaveBeenCalled();
+    res.emit(event);
+  }
+
+  test('adds the time from arrival to finish', () => {
+    const before = latency();
+    timeFakeRequest(100, 150);
+    timeFakeRequest(200, 230.5);
+
+    const after = latency();
+    expect(after.sum - before.sum).toBeCloseTo(80.5);
+    expect(after.count - before.count).toBe(2);
+  });
+
+  test('requests the client abandons are not counted', () => {
+    const before = latency();
+    timeFakeRequest(100, 150, 'close');
+    expect(latency()).toEqual(before);
+  });
+
+  test('times real requests through the app', async () => {
+    const before = latency();
+    await request(app).get('/');
+    await request(app).get('/nothing-here');
+
+    const after = latency();
+    expect(after.count - before.count).toBe(2);
+    expect(after.sum).toBeGreaterThan(before.sum);
+  });
+
+  test('is sent as cumulative counters', () => {
+    const all = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics;
+    const sum = all.find((m) => m.name === 'http_request_latency_milliseconds');
+    const count = all.find((m) => m.name === 'http_requests_timed');
+    expect(sum.unit).toBe('ms');
+    expect(count.unit).toBe('{request}');
+    for (const m of [sum, count]) {
+      expect(m.sum.isMonotonic).toBe(true);
+      expect(m.sum.aggregationTemporality).toBe('AGGREGATION_TEMPORALITY_CUMULATIVE');
+    }
+  });
+});
