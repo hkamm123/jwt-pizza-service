@@ -278,7 +278,7 @@ describe('system metrics', () => {
   });
 });
 
-describe('pizzas sold', () => {
+describe('pizza orders', () => {
   let menuItem;
   let franchise;
   let store;
@@ -290,10 +290,13 @@ describe('pizzas sold', () => {
     store = await DB.createStore(franchise.id, { name: 'store ' + randomName() });
   });
 
-  function pizzasSold() {
-    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'pizzas_sold');
+  function counterValue(name) {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
     return metric.sum.dataPoints[0].asInt;
   }
+
+  const pizzasSold = () => counterValue('pizzas_sold');
+  const pizzaFailures = () => counterValue('pizza_creation_failures');
 
   function orderOf(count) {
     const item = { menuId: menuItem.id, description: menuItem.title, price: menuItem.price };
@@ -320,8 +323,38 @@ describe('pizzas sold', () => {
     expect(pizzasSold()).toBe(before);
   });
 
-  test('is a cumulative counter', () => {
-    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === 'pizzas_sold');
+  test('a rejected order counts each pizza as a creation failure', async () => {
+    const { token } = await registerDiner();
+    mockFactory(false, { reportUrl: 'https://factory.test/report' });
+    const before = pizzaFailures();
+
+    await createOrder(token, orderOf(2));
+    expect(pizzaFailures() - before).toBe(2);
+  });
+
+  test('an unreachable factory counts as a creation failure', async () => {
+    const { token } = await registerDiner();
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('factory down'));
+    const before = pizzaFailures();
+
+    const orderRes = await createOrder(token, orderOf(1));
+    expect(orderRes.status).toBe(500);
+    expect(pizzaFailures() - before).toBe(1);
+  });
+
+  test('accepted and invalid orders are not creation failures', async () => {
+    const { token } = await registerDiner();
+    mockFactory(true, { reportUrl: 'https://factory.test/report', jwt: 'factory.issued.jwt' });
+    const before = pizzaFailures();
+
+    await createOrder(token, orderOf(2));
+    const invalidRes = await createOrder(token, { ...orderOf(1), items: [{ menuId: -1, description: 'nope', price: 1 }] });
+    expect(invalidRes.status).toBe(404);
+    expect(pizzaFailures()).toBe(before);
+  });
+
+  test.each(['pizzas_sold', 'pizza_creation_failures'])('%s is a cumulative counter', (name) => {
+    const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
     expect(metric.unit).toBe('{pizza}');
     expect(metric.sum.isMonotonic).toBe(true);
     expect(metric.sum.aggregationTemporality).toBe('AGGREGATION_TEMPORALITY_CUMULATIVE');

@@ -12,6 +12,7 @@ let totalRequests = 0;
 const authAttempts = { success: 0, failure: 0 };
 
 let pizzasSold = 0;
+let pizzaFailures = 0;
 
 const ACTIVE_USERS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const activeUsers = new Map(); // Map of userId to last activity timestamp
@@ -49,6 +50,8 @@ function authAttempt(result) {
 function pizzaPurchase(success, order) {
   if (success) {
     pizzasSold += order.items.length;
+  } else {
+    pizzaFailures += order.items.length;
   }
 }
 
@@ -140,6 +143,9 @@ function buildPayload(now = Date.now()) {
               ]),
               counterMetric('auth_attempts', '{request}', byResult),
               counterMetric('pizzas_sold', '{pizza}', [point(pizzasSold)]),
+              counterMetric('pizza_creation_failures', '{pizza}', [
+                point(pizzaFailures),
+              ]),
               gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
               ]),
