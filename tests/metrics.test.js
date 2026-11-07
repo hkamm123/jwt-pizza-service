@@ -380,6 +380,70 @@ describe('pizza orders', () => {
     expect(metric.sum.dataPoints[0].asInt).toBeUndefined();
   });
 
+  function factoryLatency() {
+    return { sum: counterValue('pizza_creation_latency_milliseconds', 'asDouble'), count: counterValue('pizza_creations_timed') };
+  }
+
+  function slowFactory(delayMs, ok) {
+    const res = { ok, json: async () => ({ reportUrl: 'https://factory.test/report', jwt: 'factory.issued.jwt' }) };
+    jest.spyOn(global, 'fetch').mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(res), delayMs)));
+  }
+
+  test('pizzaPurchase adds the factory latency for every order', () => {
+    const before = factoryLatency();
+    metrics.pizzaPurchase(true, { items: [] }, 40);
+    metrics.pizzaPurchase(false, { items: [] }, 2.5);
+
+    const after = factoryLatency();
+    expect(after.sum - before.sum).toBeCloseTo(42.5);
+    expect(after.count - before.count).toBe(2);
+  });
+
+  test.each([
+    ['accepted', true, 200],
+    ['rejected', false, 500],
+  ])('times the factory call for %s orders', async (_, ok, status) => {
+    const { token } = await registerDiner();
+    slowFactory(30, ok);
+    const before = factoryLatency();
+
+    const orderRes = await createOrder(token, orderOf(1));
+    expect(orderRes.status).toBe(status);
+    const after = factoryLatency();
+    expect(after.count - before.count).toBe(1);
+    expect(after.sum - before.sum).toBeGreaterThanOrEqual(25); // setTimeout can fire a little early
+  });
+
+  test('times the factory call when it cannot be reached', async () => {
+    const { token } = await registerDiner();
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('factory down'));
+    const before = factoryLatency();
+
+    await createOrder(token, orderOf(1));
+    expect(factoryLatency().count - before.count).toBe(1);
+  });
+
+  test('invalid orders never reach the factory, so they are not timed', async () => {
+    const { token } = await registerDiner();
+    const before = factoryLatency();
+
+    await createOrder(token, { ...orderOf(1), items: [{ menuId: -1, description: 'nope', price: 1 }] });
+    expect(factoryLatency()).toEqual(before);
+  });
+
+  test('factory latency is sent as cumulative counters', () => {
+    const all = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics;
+    const sum = all.find((m) => m.name === 'pizza_creation_latency_milliseconds');
+    const count = all.find((m) => m.name === 'pizza_creations_timed');
+    expect(sum.unit).toBe('ms');
+    expect(count.unit).toBe('{order}');
+    expect(typeof sum.sum.dataPoints[0].asDouble).toBe('number');
+    for (const m of [sum, count]) {
+      expect(m.sum.isMonotonic).toBe(true);
+      expect(m.sum.aggregationTemporality).toBe('AGGREGATION_TEMPORALITY_CUMULATIVE');
+    }
+  });
+
   test.each(['pizzas_sold', 'pizza_creation_failures'])('%s is a cumulative counter', (name) => {
     const metric = metrics.buildPayload().resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
     expect(metric.unit).toBe('{pizza}');

@@ -80,6 +80,7 @@ orderRouter.post(
   asyncHandler(async (req, res) => {
     const orderReq = req.body;
     const order = await DB.addDinerOrder(req.user, orderReq);
+    const factoryStart = performance.now();
     let r, j;
     try {
       r = await fetch(`${config.factory.url}/api/order`, {
@@ -89,10 +90,10 @@ orderRouter.post(
       });
       j = await r.json();
     } catch (err) {
-      metrics.pizzaPurchase(false, order); // factory unreachable or bad response
+      metrics.pizzaPurchase(false, order, performance.now() - factoryStart); // factory unreachable or bad response
       throw err;
     }
-    metrics.pizzaPurchase(r.ok, order);
+    metrics.pizzaPurchase(r.ok, order, performance.now() - factoryStart);
     if (r.ok) {
       res.send({ order, followLinkToEndChaos: j.reportUrl, jwt: j.jwt });
     } else {

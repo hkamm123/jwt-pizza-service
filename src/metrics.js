@@ -14,6 +14,8 @@ const authAttempts = { success: 0, failure: 0 };
 let pizzasSold = 0;
 let pizzaFailures = 0;
 let revenue = 0; // in bitcoin, like the menu prices
+let factoryLatencySumMs = 0;
+let factoryLatencyCount = 0;
 
 let latencySumMs = 0;
 let latencyCount = 0;
@@ -60,7 +62,9 @@ function authAttempt(result) {
   authAttempts[result]++;
 }
 
-function pizzaPurchase(success, order) {
+function pizzaPurchase(success, order, latencyMs) {
+  factoryLatencySumMs += latencyMs;
+  factoryLatencyCount++;
   if (success) {
     pizzasSold += order.items.length;
     revenue += order.items.reduce((sum, item) => sum + item.price, 0);
@@ -168,6 +172,12 @@ function buildPayload(now = Date.now()) {
               ]),
               counterMetric('http_requests_timed', '{request}', [
                 point(latencyCount),
+              ]),
+              counterMetric('pizza_creation_latency_milliseconds', 'ms', [
+                point(factoryLatencySumMs, [], 'asDouble'),
+              ]),
+              counterMetric('pizza_creations_timed', '{order}', [
+                point(factoryLatencyCount),
               ]),
               gaugeMetric('active_users', '{user}', [
                 { asInt: countActiveUsers(now), timeUnixNano },
