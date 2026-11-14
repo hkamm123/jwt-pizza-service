@@ -9,5 +9,6 @@
       "lines": 80
     }
   },
-  "coveragePathIgnorePatterns": ["src/testUtils.js"]
+  "coveragePathIgnorePatterns": ["src/testUtils.js"],
+  "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"]
 }
