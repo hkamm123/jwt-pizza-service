@@ -4,6 +4,7 @@ const config = require('../config.js');
 const { StatusCodeError } = require('../endpointHelper.js');
 const { Role } = require('../model/model.js');
 const dbModel = require('./dbModel.js');
+const logger = require('../logger.js');
 class DB {
   constructor() {
     this.initialized = this.initializeDatabase();
@@ -561,12 +562,14 @@ class DB {
   }
 
   async query(connection, sql, params) {
+    logger.logSql(sql);
     const [results] = await connection.execute(sql, params);
     return results;
   }
 
   async getID(connection, key, value, table) {
-    const [rows] = await connection.execute(
+    const rows = await this.query(
+      connection,
       `SELECT id FROM ${table} WHERE ${key}=?`,
       [value],
     );
@@ -635,7 +638,8 @@ class DB {
         JSON.stringify({
           message: 'Error initializing database',
           exception: err.message,
-          connection: config.db.connection,
+          database: config.db.connection.database,
+          host: config.db.connection.host,
         }),
       );
     }

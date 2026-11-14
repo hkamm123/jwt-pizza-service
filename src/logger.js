@@ -29,6 +29,10 @@ class Logger {
     next();
   };
 
+  logSql(sql) {
+    this.log('info', 'db', { sql });
+  };
+
   log(level, type, logData) {
     const labels = { component: config.logging.source, level: level, type: type };
     const values = [this.nowString(), JSON.stringify(this.sanitize(logData))];

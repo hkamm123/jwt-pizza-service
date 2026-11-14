@@ -242,3 +242,16 @@ describe('httpLogger', () => {
     expect(res.text).toBe('plain text error');
   });
 });
+
+test('logSql logs the SQL as a db event', () => {
+  const logs = captureLogs();
+
+  logger.logSql('SELECT * FROM user WHERE id=1');
+
+  expect(logs[0].labels).toEqual({
+    component: 'test-service',
+    level: 'info',
+    type: 'db',
+  });
+  expect(logs[0].data).toEqual({ sql: 'SELECT * FROM user WHERE id=1' });
+});
