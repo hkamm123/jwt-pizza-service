@@ -92,9 +92,14 @@ class Logger {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.logging.accountId}:${config.logging.apiKey}`,
       },
-    }).then((res) => {
-      if (!res.ok) console.log('Failed to send log to Grafana');
-    });
+    })
+      .then((res) => {
+        if (!res.ok) console.log('Failed to send log to Grafana');
+      })
+      // Without this, a network failure would be an unhandled rejection, which crashes Node.
+      .catch((err) => {
+        console.log('Failed to send log to Grafana:', err.message);
+      });
   }
 }
 module.exports = new Logger();

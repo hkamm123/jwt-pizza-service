@@ -177,6 +177,16 @@ describe('sendLogToGrafana', () => {
 
     expect(consoleLog).toHaveBeenCalledWith('Failed to send log to Grafana');
   });
+
+  test('reports network failures instead of crashing', async () => {
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    logger.sendLogToGrafana(event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(consoleLog).toHaveBeenCalledWith('Failed to send log to Grafana:', 'getaddrinfo ENOTFOUND');
+  });
 });
 
 describe('httpLogger', () => {
