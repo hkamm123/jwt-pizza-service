@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../src/service');
 const { DB } = require('../src/database/database.js');
+const logger = require('../src/logger.js');
 const { randomName, createAdminUser, registerDiner, loginUser, expectResponse, createOrder, mockFactory } = require('../src/testUtils.js');
 
 let adminAuthToken;
@@ -106,6 +107,17 @@ test('create order', async () => {
   expect(JSON.parse(factoryReq.body)).toEqual({
     diner: { id: user.id, name: user.name, email: user.email },
     order: orderRes.body.order,
+  });
+
+  const factoryLog = logger.sendLogToGrafana.mock.calls
+    .map(([event]) => event.streams[0])
+    .find((stream) => stream.stream.type === 'factory');
+  expect(factoryLog.stream.level).toBe('info');
+  expect(JSON.parse(factoryLog.values[0][1])).toEqual({
+    userId: user.id,
+    statusCode: 200,
+    reqBody: { diner: { id: user.id }, order: orderRes.body.order },
+    resBody: { reportUrl: 'https://factory.test/report' },
   });
 });
 

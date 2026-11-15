@@ -18,7 +18,6 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-// Stops logs from being sent and returns the parsed log lines that would have been.
 function captureLogs() {
   const sent = [];
   jest.spyOn(logger, 'sendLogToGrafana').mockImplementation((event) => {
@@ -285,4 +284,29 @@ test('logSql leaves out the user when the request is not authenticated', async (
 
   const sqlLog = logs.find((log) => log.labels.type === 'db');
   expect(sqlLog.data).toEqual({ sql: 'SELECT * FROM dinerOrder WHERE dinerId=?' });
+});
+
+test('logFactory logs a sanitized factory request and response', () => {
+  const logs = captureLogs();
+
+  logger.logFactory(
+    { diner: { id: 2, name: 'pizza diner', email: 'd@jwt.com' }, order: { id: 5 } },
+    { reportUrl: 'https://factory.test/report', jwt: 'factory.issued.jwt' },
+    200
+  );
+
+  expect(logs[0].labels).toEqual({ component: 'test-service', level: 'info', type: 'factory' });
+  expect(logs[0].data).toEqual({
+    statusCode: 200,
+    reqBody: { diner: { id: 2 }, order: { id: 5 } },
+    resBody: { reportUrl: 'https://factory.test/report' },
+  });
+});
+
+test('logFactory logs failed factory requests as errors', () => {
+  const logs = captureLogs();
+
+  logger.logFactory({ order: { id: 5 } }, { message: 'factory down' }, 500);
+
+  expect(logs[0].labels.level).toBe('error');
 });

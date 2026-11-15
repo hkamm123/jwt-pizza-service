@@ -57,7 +57,7 @@ function createOrder(token, orderReq) {
 
 // Stand in for the pizza factory so tests never place real orders with the real API key.
 function mockFactory(ok, body) {
-  return jest.spyOn(global, 'fetch').mockResolvedValue({ ok, json: async () => body });
+  return jest.spyOn(global, 'fetch').mockResolvedValue({ ok, status: ok ? 200 : 500, json: async () => body });
 }
 
 module.exports = {

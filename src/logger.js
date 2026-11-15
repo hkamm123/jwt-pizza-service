@@ -2,12 +2,10 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const config = require('./config');
 
 const MASK = '*****';
-// These keys are removed from logged data, wherever they appear.
 const SECRET_KEYS = ['password', 'token', 'jwt', 'apikey', 'authorization', 'email'];
 // An object with any of these keys is a user, so its `name` is removed too.
 // (Franchises and stores also have a `name`, and those are kept.)
 const USER_KEYS = ['email', 'password', 'roles'];
-// Catches emails inside free text, e.g. "unknown user for franchise admin a@jwt.com".
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
 // Holds the current request for everything that runs while handling it, including
 // awaited DB calls, so logs made deep in the code can find the request's user.
@@ -36,6 +34,11 @@ class Logger {
 
   logSql(sql) {
     this.log('info', 'db', { userId: this.currentUserId(), sql });
+  }
+
+  logFactory(reqBody, resBody, statusCode) {
+    const level = this.statusToLogLevel(statusCode);
+    this.log(level, 'factory', { userId: this.currentUserId(), statusCode, reqBody, resBody });
   }
 
   currentUserId() {
