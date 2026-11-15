@@ -1,3 +1,4 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const config = require('./config');
 
 const MASK = '*****';
@@ -8,6 +9,9 @@ const SECRET_KEYS = ['password', 'token', 'jwt', 'apikey', 'authorization', 'ema
 const USER_KEYS = ['email', 'password', 'roles'];
 // Catches emails inside free text, e.g. "unknown user for franchise admin a@jwt.com".
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
+// Holds the current request for everything that runs while handling it, including
+// awaited DB calls, so logs made deep in the code can find the request's user.
+const requestContext = new AsyncLocalStorage();
 
 class Logger {
   httpLogger = (req, res, next) => {
@@ -15,6 +19,7 @@ class Logger {
     res.send = (resBody) => {
       const logData = {
         authorized: !!req.headers.authorization,
+        userId: req.user?.id,
         path: this.sanitizePath(req.originalUrl),
         method: req.method,
         statusCode: res.statusCode,
@@ -26,12 +31,16 @@ class Logger {
       res.send = send;
       return res.send(resBody);
     };
-    next();
+    requestContext.run(req, next);
   };
 
   logSql(sql) {
-    this.log('info', 'db', { sql });
-  };
+    this.log('info', 'db', { userId: this.currentUserId(), sql });
+  }
+
+  currentUserId() {
+    return requestContext.getStore()?.user?.id;
+  }
 
   log(level, type, logData) {
     const labels = { component: config.logging.source, level: level, type: type };

@@ -33,11 +33,22 @@ function testApp() {
   const app = express();
   app.use(logger.httpLogger);
   app.use(express.json());
+  // Stands in for setAuthUser, which sets req.user (the decoded JWT) after httpLogger runs.
+  app.use((req, res, next) => {
+    if (req.headers.authorization) req.user = { id: 7, name: 'pizza diner', email: 'd@jwt.com' };
+    next();
+  });
   app.put('/api/auth', (req, res) => {
     res.json({ user: { id: 1, name: 'pizza diner', email: 'd@jwt.com', roles: [{ role: 'diner' }] }, token: 'abc.def.ghi' });
   });
   app.get('/api/franchise', (req, res) => {
     res.send({ franchises: [{ id: 1, name: 'pizzaPocket', admins: [{ id: 3, name: 'franchisee', email: 'f@jwt.com' }] }] });
+  });
+  // Logs SQL after an await, the way DB.query() does.
+  app.get('/api/order', async (req, res) => {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    logger.logSql('SELECT * FROM dinerOrder WHERE dinerId=?');
+    res.json({ orders: [] });
   });
   app.get('/missing', (req, res) => res.status(404).json({ message: 'unknown endpoint' }));
   app.get('/broken', (req, res) => res.status(500).send('plain text error'));
@@ -202,6 +213,7 @@ describe('httpLogger', () => {
     expect(logs[0].labels).toEqual({ component: 'test-service', level: 'info', type: 'http' });
     expect(logs[0].data).toEqual({
       authorized: true,
+      userId: 7,
       path: '/api/auth',
       method: 'PUT',
       statusCode: 200,
@@ -220,6 +232,7 @@ describe('httpLogger', () => {
     await request(testApp()).get('/api/franchise');
 
     expect(logs[0].data.authorized).toBe(false);
+    expect(logs[0].data).not.toHaveProperty('userId');
     expect(logs[0].data.resBody).toEqual({ franchises: [{ id: 1, name: 'pizzaPocket', admins: [{ id: 3 }] }] });
   });
 
@@ -254,4 +267,22 @@ test('logSql logs the SQL as a db event', () => {
     type: 'db',
   });
   expect(logs[0].data).toEqual({ sql: 'SELECT * FROM user WHERE id=1' });
+});
+
+test('logSql includes the user of the request being handled', async () => {
+  const logs = captureLogs();
+
+  await request(testApp()).get('/api/order').set('Authorization', 'Bearer abc');
+
+  const sqlLog = logs.find((log) => log.labels.type === 'db');
+  expect(sqlLog.data).toEqual({ userId: 7, sql: 'SELECT * FROM dinerOrder WHERE dinerId=?' });
+});
+
+test('logSql leaves out the user when the request is not authenticated', async () => {
+  const logs = captureLogs();
+
+  await request(testApp()).get('/api/order');
+
+  const sqlLog = logs.find((log) => log.labels.type === 'db');
+  expect(sqlLog.data).toEqual({ sql: 'SELECT * FROM dinerOrder WHERE dinerId=?' });
 });
