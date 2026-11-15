@@ -310,3 +310,23 @@ test('logFactory logs failed factory requests as errors', () => {
 
   expect(logs[0].labels.level).toBe('error');
 });
+
+test('logException logs the message and stack', () => {
+  const logs = captureLogs();
+  const err = new Error('unable to delete user');
+
+  logger.logException(err, 500);
+
+  expect(logs[0].labels).toEqual({ component: 'test-service', level: 'error', type: 'exception' });
+  expect(logs[0].data).toEqual({ statusCode: 500, message: 'unable to delete user', stack: err.stack });
+});
+
+test('logException logs expected errors as warnings and masks emails', () => {
+  const logs = captureLogs();
+
+  logger.logException(new Error('unknown user for franchise admin a@jwt.com provided'), 404);
+
+  expect(logs[0].labels.level).toBe('warn');
+  expect(logs[0].data.message).toBe('unknown user for franchise admin ***** provided');
+  expect(logs[0].data.stack).not.toContain('a@jwt.com');
+});

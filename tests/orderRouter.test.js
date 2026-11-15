@@ -138,6 +138,23 @@ test('create order responds 404 and saves nothing when menu item does not exist'
   expect(ordersRes.body.orders).toEqual([]);
 });
 
+test('unexpected errors are logged as exceptions', async () => {
+  jest.spyOn(DB, 'getMenu').mockRejectedValue(new Error('connection lost'));
+
+  const res = await request(app).get('/api/order/menu');
+  expect(res.status).toBe(500);
+
+  const exceptionLog = logger.sendLogToGrafana.mock.calls
+    .map(([event]) => event.streams[0])
+    .find((stream) => stream.stream.type === 'exception');
+  expect(exceptionLog.stream.level).toBe('error');
+  expect(JSON.parse(exceptionLog.values[0][1])).toMatchObject({
+    statusCode: 500,
+    message: 'connection lost',
+    stack: expect.stringContaining('Error: connection lost'),
+  });
+});
+
 function addMenuItem(token, item) {
   return request(app)
     .put('/api/order/menu')

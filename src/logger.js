@@ -41,6 +41,11 @@ class Logger {
     this.log(level, 'factory', { userId: this.currentUserId(), statusCode, reqBody, resBody });
   }
 
+  logException(err, statusCode) {
+    const level = this.statusToLogLevel(statusCode);
+    this.log(level, 'exception', { userId: this.currentUserId(), statusCode, message: err.message, stack: err.stack });
+  }
+
   currentUserId() {
     return requestContext.getStore()?.user?.id;
   }
